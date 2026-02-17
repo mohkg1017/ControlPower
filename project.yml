@@ -1,0 +1,103 @@
+name: ControlPower
+
+options:
+  minimumXcodeGenVersion: 2.44.1
+  deploymentTarget:
+    macOS: "26.0"
+  defaultConfig: Debug
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    CODE_SIGN_STYLE: Automatic
+  configs:
+    Debug:
+      SWIFT_COMPILATION_MODE: incremental
+    Release:
+      SWIFT_COMPILATION_MODE: wholemodule
+      DEAD_CODE_STRIPPING: YES
+
+targets:
+  ControlPowerHelper:
+    type: tool
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Helper/Sources
+      - path: Shared/Sources
+    settings:
+      base:
+        PRODUCT_NAME: ControlPowerHelper
+        PRODUCT_BUNDLE_IDENTIFIER: com.moe.controlpower.helper.bin
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: ControlPowerHelper
+        INFOPLIST_KEY_LSMinimumSystemVersion: "26.0"
+
+  ControlPower:
+    type: application
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: App/Sources
+      - path: Shared/Sources
+      - path: App/Resources/Assets.xcassets
+      - path: App/Resources/Info.plist
+      - path: LaunchDaemons/com.moe.controlpower.helper.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchDaemons
+    dependencies:
+      - target: ControlPowerHelper
+        embed: false
+      - sdk: ServiceManagement.framework
+    postBuildScripts:
+      - name: Embed Helper Binary
+        script: |
+          set -euo pipefail
+          helper="$BUILT_PRODUCTS_DIR/ControlPowerHelper"
+          destination="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/ControlPowerHelper"
+          if [[ ! -f "$helper" ]]; then
+            echo "error: missing helper binary at $helper"
+            exit 1
+          fi
+          cp "$helper" "$destination"
+          chmod 755 "$destination"
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ControlPowerHelper
+    settings:
+      base:
+        PRODUCT_NAME: ControlPower
+        PRODUCT_BUNDLE_IDENTIFIER: com.moe.controlpower
+        INFOPLIST_FILE: App/Resources/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: YES
+
+  ControlPowerTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: ControlPower
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.moe.controlpower.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/ControlPower.app/Contents/MacOS/ControlPower"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  ControlPower:
+    build:
+      targets:
+        ControlPower: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - ControlPowerTests
+    archive:
+      config: Release

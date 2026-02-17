@@ -1,0 +1,645 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1AE5D021440A0F77B873F2BC /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB8B5C913093223197B05F7A /* MainView.swift */; };
+		1B66749E05BBDA0B5A1A4A74 /* PowerDaemonClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 273A7C5673095C0C1A1FF70B /* PowerDaemonClient.swift */; };
+		22FE81351D2F881B578265FE /* AppSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 586524534E5C7F6EAE229100 /* AppSettingsView.swift */; };
+		23B4BF0477EC34E9AAB1F7DB /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 907D05B6640E38587EC61113 /* main.swift */; };
+		28C509CEB2CC7740A1F39C7E /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C360EE83EAC691E3EE4CED81 /* AppSettings.swift */; };
+		36DC4005EEB5D6490EF79109 /* PowerHelperXPCProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9F0D7052F036B96CBA938E5 /* PowerHelperXPCProtocol.swift */; };
+		6A4EBD4FECD67D3B5A0921CE /* HelperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9774F48955860549B53ADA04 /* HelperService.swift */; };
+		6F47554028CD76DF960DDF6D /* com.moe.controlpower.helper.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = A226D81853A36A42D4BE4192 /* com.moe.controlpower.helper.plist */; };
+		71593709BF0BE70FF0EDE8C2 /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EE3D0059B06EBE55889DEEE /* AppViewModel.swift */; };
+		7A177553016CA69014B1332D /* MenuBarPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5BBB67192A324C0CBDBFC86 /* MenuBarPanelView.swift */; };
+		B2C0EC1B707281BDEBF4C2A5 /* ControlPowerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AFBE240430F2F545FE4DCB /* ControlPowerApp.swift */; };
+		B708EA29E2D585CE4769BBD9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E9F2F8A16095D686DD7679ED /* Assets.xcassets */; };
+		BA650522DE2235E165752097 /* PowerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 624CF9D66184F5CE10877F34 /* PowerModels.swift */; };
+		C730912DF862DEA38828112A /* PowerHelperXPCProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9F0D7052F036B96CBA938E5 /* PowerHelperXPCProtocol.swift */; };
+		E2AAE921BCBE789451D5EC3C /* PowerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 624CF9D66184F5CE10877F34 /* PowerModels.swift */; };
+		F4FAC69DD0E8329090495C09 /* ControlPowerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D54C5DB2B86EACC4549F571 /* ControlPowerTests.swift */; };
+		F5823FF55FAE5ED7F439D0D9 /* ServiceManagement.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9EFEC6DE9BE3E22C6BA72568 /* ServiceManagement.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A460A7D6C77C90D0D6F03C32 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D4605D1A5655B6E71B3DEC0C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BD0D041A79146E9E658ED928;
+			remoteInfo = ControlPowerHelper;
+		};
+		E230DEF4241355DAECA947A2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D4605D1A5655B6E71B3DEC0C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DDFA29E39BC6708898D3884F;
+			remoteInfo = ControlPower;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		E05A969EEE40452AF1A4008D /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Library/LaunchDaemons;
+			dstSubfolderSpec = 1;
+			files = (
+				6F47554028CD76DF960DDF6D /* com.moe.controlpower.helper.plist in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		1B5716BBCDF23760B8B7A1A6 /* ControlPowerHelper */ = {isa = PBXFileReference; includeInIndex = 0; path = ControlPowerHelper; sourceTree = BUILT_PRODUCTS_DIR; };
+		273A7C5673095C0C1A1FF70B /* PowerDaemonClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerDaemonClient.swift; sourceTree = "<group>"; };
+		2EE3D0059B06EBE55889DEEE /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
+		3B96B69A6A8ED82D60AA1F18 /* ControlPower.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ControlPower.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4978AFBAC23984886014DA6B /* ControlPowerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ControlPowerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		586524534E5C7F6EAE229100 /* AppSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsView.swift; sourceTree = "<group>"; };
+		624CF9D66184F5CE10877F34 /* PowerModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerModels.swift; sourceTree = "<group>"; };
+		8D54C5DB2B86EACC4549F571 /* ControlPowerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPowerTests.swift; sourceTree = "<group>"; };
+		907D05B6640E38587EC61113 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		9774F48955860549B53ADA04 /* HelperService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperService.swift; sourceTree = "<group>"; };
+		9EFEC6DE9BE3E22C6BA72568 /* ServiceManagement.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ServiceManagement.framework; path = System/Library/Frameworks/ServiceManagement.framework; sourceTree = SDKROOT; };
+		A226D81853A36A42D4BE4192 /* com.moe.controlpower.helper.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = com.moe.controlpower.helper.plist; sourceTree = "<group>"; };
+		C360EE83EAC691E3EE4CED81 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		C5BBB67192A324C0CBDBFC86 /* MenuBarPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPanelView.swift; sourceTree = "<group>"; };
+		E9F0D7052F036B96CBA938E5 /* PowerHelperXPCProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerHelperXPCProtocol.swift; sourceTree = "<group>"; };
+		E9F2F8A16095D686DD7679ED /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		EE056CE8FF8C6FBA149D2217 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		F1AFBE240430F2F545FE4DCB /* ControlPowerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPowerApp.swift; sourceTree = "<group>"; };
+		FB8B5C913093223197B05F7A /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D2A60B992CFC0CA285B03BD9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F5823FF55FAE5ED7F439D0D9 /* ServiceManagement.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4228B483832E537AA7C583DB /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				E9F2F8A16095D686DD7679ED /* Assets.xcassets */,
+				EE056CE8FF8C6FBA149D2217 /* Info.plist */,
+			);
+			name = Resources;
+			path = App/Resources;
+			sourceTree = "<group>";
+		};
+		42EA4FDF5F3EC51350C21E89 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				8D54C5DB2B86EACC4549F571 /* ControlPowerTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		50DCD50500B323CBBD4EE4AF /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				3B96B69A6A8ED82D60AA1F18 /* ControlPower.app */,
+				1B5716BBCDF23760B8B7A1A6 /* ControlPowerHelper */,
+				4978AFBAC23984886014DA6B /* ControlPowerTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		67BD948A1300A56EA777A4AC /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				9774F48955860549B53ADA04 /* HelperService.swift */,
+				907D05B6640E38587EC61113 /* main.swift */,
+			);
+			name = Sources;
+			path = Helper/Sources;
+			sourceTree = "<group>";
+		};
+		A65C0620C14BC4C0DC9BB29D /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				E9F0D7052F036B96CBA938E5 /* PowerHelperXPCProtocol.swift */,
+				624CF9D66184F5CE10877F34 /* PowerModels.swift */,
+			);
+			name = Sources;
+			path = Shared/Sources;
+			sourceTree = "<group>";
+		};
+		B6AC6E417E8A095856D744FA /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				C360EE83EAC691E3EE4CED81 /* AppSettings.swift */,
+				586524534E5C7F6EAE229100 /* AppSettingsView.swift */,
+				2EE3D0059B06EBE55889DEEE /* AppViewModel.swift */,
+				F1AFBE240430F2F545FE4DCB /* ControlPowerApp.swift */,
+				FB8B5C913093223197B05F7A /* MainView.swift */,
+				C5BBB67192A324C0CBDBFC86 /* MenuBarPanelView.swift */,
+				273A7C5673095C0C1A1FF70B /* PowerDaemonClient.swift */,
+			);
+			name = Sources;
+			path = App/Sources;
+			sourceTree = "<group>";
+		};
+		D32F707D2D359E7B084BB86F = {
+			isa = PBXGroup;
+			children = (
+				F761F4E3D4C7274E412F28AE /* LaunchDaemons */,
+				4228B483832E537AA7C583DB /* Resources */,
+				B6AC6E417E8A095856D744FA /* Sources */,
+				67BD948A1300A56EA777A4AC /* Sources */,
+				A65C0620C14BC4C0DC9BB29D /* Sources */,
+				42EA4FDF5F3EC51350C21E89 /* Tests */,
+				FE1A31DC8402E4C3BAE52669 /* Frameworks */,
+				50DCD50500B323CBBD4EE4AF /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		F761F4E3D4C7274E412F28AE /* LaunchDaemons */ = {
+			isa = PBXGroup;
+			children = (
+				A226D81853A36A42D4BE4192 /* com.moe.controlpower.helper.plist */,
+			);
+			path = LaunchDaemons;
+			sourceTree = "<group>";
+		};
+		FE1A31DC8402E4C3BAE52669 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				9EFEC6DE9BE3E22C6BA72568 /* ServiceManagement.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		B9B5DE982B6F9CCF37E51AFA /* ControlPowerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9ECCD5DACA6CA2ECDBF764AD /* Build configuration list for PBXNativeTarget "ControlPowerTests" */;
+			buildPhases = (
+				926903ACD38FA89CCBD6CA5C /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				394E55604C7D9CAB3214C993 /* PBXTargetDependency */,
+			);
+			name = ControlPowerTests;
+			packageProductDependencies = (
+			);
+			productName = ControlPowerTests;
+			productReference = 4978AFBAC23984886014DA6B /* ControlPowerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		BD0D041A79146E9E658ED928 /* ControlPowerHelper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 51CC675EA6EDA59A921496DD /* Build configuration list for PBXNativeTarget "ControlPowerHelper" */;
+			buildPhases = (
+				BA9DD541C3FCBE066D2C7D91 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ControlPowerHelper;
+			packageProductDependencies = (
+			);
+			productName = ControlPowerHelper;
+			productReference = 1B5716BBCDF23760B8B7A1A6 /* ControlPowerHelper */;
+			productType = "com.apple.product-type.tool";
+		};
+		DDFA29E39BC6708898D3884F /* ControlPower */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CA0B4E0BA764F595164CF9DC /* Build configuration list for PBXNativeTarget "ControlPower" */;
+			buildPhases = (
+				0DAF21AA307E09FBC2FA5740 /* Sources */,
+				299DC5E9BF6606CEAAED3FF0 /* Resources */,
+				E05A969EEE40452AF1A4008D /* CopyFiles */,
+				D2A60B992CFC0CA285B03BD9 /* Frameworks */,
+				D78E431950B230770F013E3E /* Embed Helper Binary */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				FE49C5ACDF36543A07A8B21C /* PBXTargetDependency */,
+			);
+			name = ControlPower;
+			packageProductDependencies = (
+			);
+			productName = ControlPower;
+			productReference = 3B96B69A6A8ED82D60AA1F18 /* ControlPower.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D4605D1A5655B6E71B3DEC0C /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					B9B5DE982B6F9CCF37E51AFA = {
+						ProvisioningStyle = Automatic;
+					};
+					BD0D041A79146E9E658ED928 = {
+						ProvisioningStyle = Automatic;
+					};
+					DDFA29E39BC6708898D3884F = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = D7C8BA77CE37DD65B707216D /* Build configuration list for PBXProject "ControlPower" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = D32F707D2D359E7B084BB86F;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DDFA29E39BC6708898D3884F /* ControlPower */,
+				BD0D041A79146E9E658ED928 /* ControlPowerHelper */,
+				B9B5DE982B6F9CCF37E51AFA /* ControlPowerTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		299DC5E9BF6606CEAAED3FF0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B708EA29E2D585CE4769BBD9 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		D78E431950B230770F013E3E /* Embed Helper Binary */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed Helper Binary";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ControlPowerHelper",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nhelper=\"$BUILT_PRODUCTS_DIR/ControlPowerHelper\"\ndestination=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/ControlPowerHelper\"\nif [[ ! -f \"$helper\" ]]; then\n  echo \"error: missing helper binary at $helper\"\n  exit 1\nfi\ncp \"$helper\" \"$destination\"\nchmod 755 \"$destination\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		0DAF21AA307E09FBC2FA5740 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				28C509CEB2CC7740A1F39C7E /* AppSettings.swift in Sources */,
+				22FE81351D2F881B578265FE /* AppSettingsView.swift in Sources */,
+				71593709BF0BE70FF0EDE8C2 /* AppViewModel.swift in Sources */,
+				B2C0EC1B707281BDEBF4C2A5 /* ControlPowerApp.swift in Sources */,
+				1AE5D021440A0F77B873F2BC /* MainView.swift in Sources */,
+				7A177553016CA69014B1332D /* MenuBarPanelView.swift in Sources */,
+				1B66749E05BBDA0B5A1A4A74 /* PowerDaemonClient.swift in Sources */,
+				36DC4005EEB5D6490EF79109 /* PowerHelperXPCProtocol.swift in Sources */,
+				E2AAE921BCBE789451D5EC3C /* PowerModels.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		926903ACD38FA89CCBD6CA5C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F4FAC69DD0E8329090495C09 /* ControlPowerTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BA9DD541C3FCBE066D2C7D91 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6A4EBD4FECD67D3B5A0921CE /* HelperService.swift in Sources */,
+				C730912DF862DEA38828112A /* PowerHelperXPCProtocol.swift in Sources */,
+				BA650522DE2235E165752097 /* PowerModels.swift in Sources */,
+				23B4BF0477EC34E9AAB1F7DB /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		394E55604C7D9CAB3214C993 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DDFA29E39BC6708898D3884F /* ControlPower */;
+			targetProxy = E230DEF4241355DAECA947A2 /* PBXContainerItemProxy */;
+		};
+		FE49C5ACDF36543A07A8B21C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = BD0D041A79146E9E658ED928 /* ControlPowerHelper */;
+			targetProxy = A460A7D6C77C90D0D6F03C32 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		1B8684B0505C647FE9AB2B81 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = App/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.moe.controlpower;
+				PRODUCT_NAME = ControlPower;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		403A2029D1E913892AD0DBD8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = ControlPowerHelper;
+				INFOPLIST_KEY_LSMinimumSystemVersion = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.moe.controlpower.helper.bin;
+				PRODUCT_NAME = ControlPowerHelper;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		4F3E1F4ECCA9DDD9B9C7696B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.moe.controlpower.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ControlPower.app/Contents/MacOS/ControlPower";
+			};
+			name = Release;
+		};
+		62B6615B762C4771E49EB9D0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = ControlPowerHelper;
+				INFOPLIST_KEY_LSMinimumSystemVersion = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.moe.controlpower.helper.bin;
+				PRODUCT_NAME = ControlPowerHelper;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		73423988097823BD30E0B16B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		831CFAFE8D34F070D1931939 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.moe.controlpower.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ControlPower.app/Contents/MacOS/ControlPower";
+			};
+			name = Debug;
+		};
+		C4158CA3C44A29F8BA7AEAA3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = App/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.moe.controlpower;
+				PRODUCT_NAME = ControlPower;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		ECB000BD264B36A73ECADF54 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_COMPILATION_MODE = incremental;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		51CC675EA6EDA59A921496DD /* Build configuration list for PBXNativeTarget "ControlPowerHelper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				62B6615B762C4771E49EB9D0 /* Debug */,
+				403A2029D1E913892AD0DBD8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9ECCD5DACA6CA2ECDBF764AD /* Build configuration list for PBXNativeTarget "ControlPowerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				831CFAFE8D34F070D1931939 /* Debug */,
+				4F3E1F4ECCA9DDD9B9C7696B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CA0B4E0BA764F595164CF9DC /* Build configuration list for PBXNativeTarget "ControlPower" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C4158CA3C44A29F8BA7AEAA3 /* Debug */,
+				1B8684B0505C647FE9AB2B81 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D7C8BA77CE37DD65B707216D /* Build configuration list for PBXProject "ControlPower" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ECB000BD264B36A73ECADF54 /* Debug */,
+				73423988097823BD30E0B16B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = D4605D1A5655B6E71B3DEC0C /* Project object */;
+}
