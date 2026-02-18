@@ -155,30 +155,24 @@ final class PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     nonisolated private static func fetchLocalPMSetSnapshot() throws -> PMSetSnapshot {
-        let process = Process()
-        process.executableURL = pmsetURL
-        process.arguments = ["-g"]
-
-        let outputPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = outputPipe
-
-        try process.run()
-        process.waitUntilExit()
-
-        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-        guard process.terminationStatus == 0 else {
+        let result = TimedProcessRunner(executableURL: pmsetURL, timeoutSeconds: xpcTimeoutSeconds)
+            .run(arguments: ["-g"])
+        guard result.success else {
+            let output: String
+            if result.timedOut {
+                output = "pmset -g timed out after \(Int(xpcTimeoutSeconds)) seconds"
+            } else if result.output.isEmpty {
+                output = "pmset -g failed"
+            } else {
+                output = result.output
+            }
             throw NSError(
                 domain: "ControlPower.LocalPMSet",
-                code: Int(process.terminationStatus),
-                userInfo: [NSLocalizedDescriptionKey: output.isEmpty ? "pmset -g failed" : output]
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: output]
             )
         }
-
-        return PMSetParser.parse(output)
+        return PMSetParser.parse(result.output)
     }
 
     func setDisableSleep(_ enabled: Bool) async throws {

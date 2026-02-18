@@ -24,7 +24,7 @@ xcodebuild -project ControlPower.xcodeproj -scheme ControlPower -configuration D
 DEVELOPER_ID_APP='Developer ID Application: ...' NOTARY_PROFILE='notary-profile' scripts/release.sh 1.0.0 1
 ```
 
-`scripts/release.sh` now uses `xcodebuild archive` and attempts `xcodebuild -exportArchive` when `DEVELOPER_ID_APP` is set. It also copies the app dSYM from the archive into `.release/archives`.
+`scripts/release.sh` now uses `xcodebuild archive` and requires `DEVELOPER_ID_APP` for signing. It then attempts `xcodebuild -exportArchive` and copies the app dSYM from the archive into `.release/archives`.
 
 ## Install to Applications
 

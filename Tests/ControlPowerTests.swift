@@ -291,6 +291,41 @@ final class ControlPowerTests: XCTestCase {
         XCTAssertEqual(client.restoreDefaultsCallCount, 0)
     }
 
+    @MainActor
+    func testStartTimedKeepAwakeSchedulesRestoreWhenStatusRefreshFails() async {
+        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
+        let client = FakePowerDaemonClient()
+        client.daemonStatus = .enabled
+        client.fetchStatusResult = .failure(
+            NSError(domain: "Test", code: 2, userInfo: [NSLocalizedDescriptionKey: "refresh failed"])
+        )
+
+        let viewModel = AppViewModel(settingsStore: store, client: client)
+        viewModel.startTimedKeepAwake(minutes: 30)
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+
+        XCTAssertEqual(client.setDisableSleepCallCount, 1)
+        XCTAssertNotNil(viewModel.timedKeepAwakeEndDate)
+        XCTAssertEqual(viewModel.lastError, "refresh failed")
+    }
+
+    @MainActor
+    func testUnregisterDaemonFailureUpdatesDisplayedStatus() {
+        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
+        let client = FakePowerDaemonClient()
+        client.daemonStatus = .enabled
+        client.daemonStatusAfterUnregisterAttempt = .notRegistered
+        client.unregisterDaemonError = NSError(domain: "Test", code: 3, userInfo: [NSLocalizedDescriptionKey: "unregister failed"])
+
+        let viewModel = AppViewModel(settingsStore: store, client: client)
+        viewModel.daemonStatus = .enabled
+        viewModel.unregisterDaemon()
+
+        XCTAssertEqual(viewModel.daemonStatus, .notRegistered)
+        XCTAssertEqual(viewModel.lastError, "unregister failed")
+    }
+
     func testPMSetParserReadsValues() {
         let text = """
         System-wide power settings:
@@ -364,6 +399,8 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol {
     )
     var holdFetchStatus = false
     var restoreDefaultsResult: Result<Void, Error> = .success(())
+    var unregisterDaemonError: Error?
+    var daemonStatusAfterUnregisterAttempt: SMAppService.Status?
     private(set) var fetchStatusCallCount = 0
     private(set) var setDisableSleepCallCount = 0
     private(set) var setLidWakeCallCount = 0
@@ -378,7 +415,14 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol {
 
     func registerDaemon() throws {}
 
-    func unregisterDaemon() throws {}
+    func unregisterDaemon() throws {
+        if let daemonStatusAfterUnregisterAttempt {
+            daemonStatus = daemonStatusAfterUnregisterAttempt
+        }
+        if let unregisterDaemonError {
+            throw unregisterDaemonError
+        }
+    }
 
     func openLoginItemsSettings() {}
 

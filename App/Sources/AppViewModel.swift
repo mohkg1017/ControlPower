@@ -217,11 +217,11 @@ final class AppViewModel: ObservableObject {
         clearTimedKeepAwake(shouldLog: false)
         enqueueOperation("Enable keep awake for \(minutes) minutes") { [self] in
             try await self.client.setDisableSleep(true)
+            self.scheduleTimedKeepAwakeRestore(minutes: minutes)
             let status = try await self.client.fetchStatus()
             guard !Task.isCancelled else { return }
             self.snapshot = status.snapshot
             self.statusSource = status.source
-            self.scheduleTimedKeepAwakeRestore(minutes: minutes)
         }
     }
 
@@ -265,6 +265,7 @@ final class AppViewModel: ObservableObject {
                 appendLog("Helper status unchanged: \(daemonStatusText())")
             }
         } catch {
+            daemonStatus = client.daemonStatus
             lastError = error.localizedDescription
             appendLog("Daemon unregister failed: \(error.localizedDescription)")
         }

@@ -14,6 +14,12 @@ VERSION="${1:-1.0.0}"
 BUILD="${2:-1}"
 TEST_CONFIGURATION="${TEST_CONFIGURATION:-Debug}"
 
+if [[ -z "${DEVELOPER_ID_APP:-}" ]]; then
+  echo "error: DEVELOPER_ID_APP is required for release builds"
+  echo "error: export DEVELOPER_ID_APP='Developer ID Application: ...'"
+  exit 1
+fi
+
 if [[ -f "$ROOT_DIR/project.yml" ]]; then
   if command -v xcodegen >/dev/null 2>&1; then
     xcodegen generate --spec "$ROOT_DIR/project.yml"
@@ -54,19 +60,18 @@ fi
 
 APP_PATH="$ARCHIVE_APP_PATH"
 
-if [[ -n "${DEVELOPER_ID_APP:-}" ]]; then
-  HELPER_PATH="$ARCHIVE_APP_PATH/Contents/Resources/ControlPowerHelper"
-  if [[ ! -f "$HELPER_PATH" ]]; then
-    echo "Missing helper binary at $HELPER_PATH"
-    exit 1
-  fi
+HELPER_PATH="$ARCHIVE_APP_PATH/Contents/Resources/ControlPowerHelper"
+if [[ ! -f "$HELPER_PATH" ]]; then
+  echo "Missing helper binary at $HELPER_PATH"
+  exit 1
+fi
 
-  echo "Signing app with: $DEVELOPER_ID_APP"
-  /usr/bin/codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APP" "$HELPER_PATH"
-  /usr/bin/codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APP" "$ARCHIVE_APP_PATH"
+echo "Signing app with: $DEVELOPER_ID_APP"
+/usr/bin/codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APP" "$HELPER_PATH"
+/usr/bin/codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APP" "$ARCHIVE_APP_PATH"
 
-  EXPORT_OPTIONS="$BUILD_DIR/ExportOptions.plist"
-  cat > "$EXPORT_OPTIONS" <<EOF
+EXPORT_OPTIONS="$BUILD_DIR/ExportOptions.plist"
+cat > "$EXPORT_OPTIONS" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -79,20 +84,17 @@ if [[ -n "${DEVELOPER_ID_APP:-}" ]]; then
 </plist>
 EOF
 
-  if xcodebuild \
-    -exportArchive \
-    -archivePath "$ARCHIVE_PATH" \
-    -exportPath "$EXPORT_DIR" \
-    -exportOptionsPlist "$EXPORT_OPTIONS"; then
-    EXPORTED_APP_PATH="$EXPORT_DIR/$APP_NAME.app"
-    if [[ -d "$EXPORTED_APP_PATH" ]]; then
-      APP_PATH="$EXPORTED_APP_PATH"
-    fi
-  else
-    echo "warning: exportArchive failed; falling back to archived app"
+if xcodebuild \
+  -exportArchive \
+  -archivePath "$ARCHIVE_PATH" \
+  -exportPath "$EXPORT_DIR" \
+  -exportOptionsPlist "$EXPORT_OPTIONS"; then
+  EXPORTED_APP_PATH="$EXPORT_DIR/$APP_NAME.app"
+  if [[ -d "$EXPORTED_APP_PATH" ]]; then
+    APP_PATH="$EXPORTED_APP_PATH"
   fi
 else
-  echo "warning: DEVELOPER_ID_APP not set; app will not be Developer ID signed"
+  echo "warning: exportArchive failed; falling back to archived app"
 fi
 
 DSYM_PATH="$ARCHIVE_PATH/dSYMs/$APP_NAME.app.dSYM"
