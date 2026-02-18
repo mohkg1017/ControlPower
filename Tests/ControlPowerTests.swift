@@ -1,134 +1,12 @@
 import Foundation
-import ServiceManagement
+import Synchronization
 import XCTest
-@testable import ControlPower
+@testable import ControlPowerCore
 
 final class ControlPowerTests: XCTestCase {
-    func testAppSettingsDefaultsToApplePreset() {
-        let settings = AppSettings()
-        XCTAssertEqual(settings.selectedPresetRawValue, PowerPreset.appleDefaults.rawValue)
-    }
-
-    func testAppSettingsDefaultsToCustomTimedDuration() {
-        let settings = AppSettings()
-        XCTAssertEqual(settings.customTimedKeepAwakeMinutes, 45)
-    }
-
-    func testAppSettingsDecodeBackfillsMissingKeys() throws {
-        let data = """
-        {
-          "launchAtLogin": false,
-          "selectedPresetRawValue": 2
-        }
-        """.data(using: .utf8)!
-
-        let settings = try JSONDecoder().decode(AppSettings.self, from: data)
-        XCTAssertFalse(settings.launchAtLogin)
-        XCTAssertEqual(settings.selectedPresetRawValue, 2)
-        XCTAssertEqual(settings.autoRefreshIntervalSeconds, 60)
-        XCTAssertEqual(settings.customTimedKeepAwakeMinutes, 45)
-    }
-
-    func testAppSettingsDecodeClampsRangeValues() throws {
-        let data = """
-        {
-          "autoRefreshIntervalSeconds": 1,
-          "customTimedKeepAwakeMinutes": 1000
-        }
-        """.data(using: .utf8)!
-
-        let settings = try JSONDecoder().decode(AppSettings.self, from: data)
-        XCTAssertEqual(settings.autoRefreshIntervalSeconds, 60)
-        XCTAssertEqual(settings.customTimedKeepAwakeMinutes, 720)
-    }
-
-    @MainActor
-    func testSettingsStoreMigratesLegacyFileToVersionedEnvelope() throws {
-        let url = makeTemporarySettingsURL(testName: #function)
-
-        var legacy = AppSettings()
-        legacy.launchAtLogin = false
-        legacy.customTimedKeepAwakeMinutes = 120
-        legacy.selectedPresetRawValue = PowerPreset.deskMode.rawValue
-        try JSONEncoder().encode(legacy).write(to: url, options: .atomic)
-
-        let store = SettingsStore(settingsURL: url)
-
-        XCTAssertFalse(store.settings.launchAtLogin)
-        XCTAssertEqual(store.settings.customTimedKeepAwakeMinutes, 120)
-        XCTAssertEqual(store.settings.selectedPresetRawValue, PowerPreset.deskMode.rawValue)
-
-        store.flush()
-
-        let savedData = try Data(contentsOf: url)
-        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: savedData) as? [String: Any])
-        XCTAssertEqual(object["version"] as? Int, 1)
-        XCTAssertNotNil(object["settings"] as? [String: Any])
-    }
-
-    @MainActor
-    func testSettingsStoreBacksUpCorruptFileAndResets() throws {
-        let nowDate = Date(timeIntervalSince1970: 1_700_000_000)
-        let url = makeTemporarySettingsURL(testName: #function)
-        try Data("{ this is not valid json".utf8).write(to: url, options: .atomic)
-
-        let store = SettingsStore(
-            settingsURL: url,
-            now: { nowDate }
-        )
-
-        XCTAssertNotNil(store.persistenceError)
-        XCTAssertEqual(store.settings, AppSettings())
-
-        let backupURL = url
-            .deletingPathExtension()
-            .appendingPathExtension("corrupt-\(Int(nowDate.timeIntervalSince1970)).json")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: backupURL.path))
-    }
-
-    @MainActor
-    func testSettingsStoreRejectsUnsupportedVersionWithoutBackup() throws {
-        let nowDate = Date(timeIntervalSince1970: 1_700_000_123)
-        let url = makeTemporarySettingsURL(testName: #function)
-        let raw = """
-        {
-          "version": 99,
-          "settings": {
-            "launchAtLogin": false,
-            "autoRegisterDaemonOnLaunch": true,
-            "autoRefreshIntervalSeconds": 60,
-            "promptOnQuitIfChanged": true,
-            "showThermalWarning": true,
-            "customTimedKeepAwakeMinutes": 45,
-            "selectedPresetRawValue": 3
-          }
-        }
-        """
-        try Data(raw.utf8).write(to: url, options: .atomic)
-
-        let store = SettingsStore(
-            settingsURL: url,
-            now: { nowDate }
-        )
-
-        XCTAssertEqual(store.settings, AppSettings())
-        XCTAssertEqual(store.persistenceError, "Unsupported settings file version (99).")
-
-        let backupURL = url
-            .deletingPathExtension()
-            .appendingPathExtension("corrupt-\(Int(nowDate.timeIntervalSince1970)).json")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: backupURL.path))
-
-        let savedData = try Data(contentsOf: url)
-        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: savedData) as? [String: Any])
-        XCTAssertEqual(object["version"] as? Int, 99)
-    }
-
     @MainActor
     func testViewModelRefreshUpdatesStateFromInjectedClient() async {
-        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
         let client = FakePowerDaemonClient()
-        client.daemonStatus = .enabled
         client.fetchStatusResult = .success(
             PowerHelperStatus(
                 snapshot: PMSetSnapshot(disableSleep: true, lidWake: false, summary: "mock-summary"),
@@ -136,7 +14,7 @@ final class ControlPowerTests: XCTestCase {
             )
         )
 
-        let viewModel = AppViewModel(settingsStore: store, client: client)
+        let viewModel = AppViewModel(client: client)
         await viewModel.refreshStatus()
 
         XCTAssertEqual(viewModel.snapshot.disableSleep, true)
@@ -148,12 +26,10 @@ final class ControlPowerTests: XCTestCase {
 
     @MainActor
     func testViewModelRefreshSkipsConcurrentRequests() async {
-        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
         let client = FakePowerDaemonClient()
-        client.daemonStatus = .enabled
         client.holdFetchStatus = true
 
-        let viewModel = AppViewModel(settingsStore: store, client: client)
+        let viewModel = AppViewModel(client: client)
 
         async let firstRefresh: Void = viewModel.refreshStatus()
         await client.waitForFetchStatusCallCount(1)
@@ -165,202 +41,255 @@ final class ControlPowerTests: XCTestCase {
     }
 
     @MainActor
-    func testViewModelRefreshLogsFallbackReason() async {
-        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
-        let client = FakePowerDaemonClient()
-        client.daemonStatus = .notRegistered
-        client.fetchStatusResult = .success(
-            PowerHelperStatus(
-                snapshot: PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "fallback"),
-                source: .localFallback,
-                fallbackReason: "Helper status is Not Registered"
-            )
-        )
-
-        let viewModel = AppViewModel(settingsStore: store, client: client)
-        await viewModel.refreshStatus()
-
-        XCTAssertTrue(viewModel.logEntries.contains { $0.message.contains("Using local fallback: Helper status is Not Registered") })
-    }
-
-    @MainActor
     func testViewModelMutationsRunSequentially() async {
-        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
         let client = FakePowerDaemonClient()
-        client.daemonStatus = .enabled
 
-        let viewModel = AppViewModel(settingsStore: store, client: client)
+        let viewModel = AppViewModel(client: client)
         viewModel.toggleDisableSleep()
-        viewModel.toggleLidWake()
+        viewModel.restoreDefaults()
 
         await client.waitForMutationCallCount(2)
         await client.waitForIdleMutations()
 
         XCTAssertEqual(client.setDisableSleepCallCount, 1)
-        XCTAssertEqual(client.setLidWakeCallCount, 1)
+        XCTAssertEqual(client.restoreDefaultsCallCount, 1)
         XCTAssertEqual(client.maxConcurrentMutationCalls, 1)
     }
 
     @MainActor
-    func testRequestQuitRestoreFailureDoesNotTerminate() async {
-        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
+    func testToggleDisableSleepUsesCurrentSnapshotAsSourceOfTruth() async {
         let client = FakePowerDaemonClient()
-        client.daemonStatus = .enabled
         client.fetchStatusResult = .success(
             PowerHelperStatus(
-                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "initial"),
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "first"),
                 source: .helper
             )
         )
-        client.restoreDefaultsResult = .failure(NSError(domain: "Test", code: 1, userInfo: [NSLocalizedDescriptionKey: "restore failed"]))
 
-        var terminateCount = 0
-        let viewModel = AppViewModel(
-            settingsStore: store,
-            client: client,
-            presentQuitPrompt: { .restoreDefaultsAndQuit },
-            terminateApp: { terminateCount += 1 }
+        let viewModel = AppViewModel(client: client)
+        await viewModel.refreshStatus()
+
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: true, lidWake: true, summary: "after-toggle"),
+                source: .helper
+            )
         )
 
-        await viewModel.refreshStatus()
-        viewModel.snapshot = PMSetSnapshot(disableSleep: true, lidWake: false, summary: "changed")
-        viewModel.requestQuit()
+        viewModel.toggleDisableSleep()
+        await client.waitForMutationCallCount(1)
+        await client.waitForFetchStatusCallCount(2)
+        await client.waitForIdleMutations()
+        await Task.yield()
+
+        XCTAssertEqual(client.lastDisableSleepValue, true)
+        XCTAssertEqual(viewModel.snapshot.disableSleep, true)
+        XCTAssertEqual(viewModel.snapshot.summary, "after-toggle")
+    }
+
+    @MainActor
+    func testRestoreDefaultsFailureSurfacesError() async {
+        let client = FakePowerDaemonClient()
+        client.restoreDefaultsResult = .failure(
+            NSError(domain: "Test", code: 1, userInfo: [NSLocalizedDescriptionKey: "restore failed"])
+        )
+
+        let viewModel = AppViewModel(client: client)
+        viewModel.restoreDefaults()
         await client.waitForMutationCallCount(1)
         await client.waitForIdleMutations()
+        for _ in 0..<20 where viewModel.lastError == nil {
+            await Task.yield()
+        }
 
-        XCTAssertEqual(terminateCount, 0)
         XCTAssertEqual(client.restoreDefaultsCallCount, 1)
-        XCTAssertEqual(viewModel.lastError, "restore failed")
+        XCTAssertEqual(viewModel.lastError, "Restore defaults failed: restore failed")
     }
 
     @MainActor
-    func testRequestQuitRestoreSuccessTerminates() async {
-        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
+    func testLowBatteryProtectionDisablesNoSleep() async {
         let client = FakePowerDaemonClient()
-        client.daemonStatus = .enabled
         client.fetchStatusResult = .success(
             PowerHelperStatus(
-                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "initial"),
+                snapshot: PMSetSnapshot(disableSleep: true, lidWake: true, summary: "awake"),
                 source: .helper
             )
         )
 
-        var terminateCount = 0
-        let viewModel = AppViewModel(
-            settingsStore: store,
-            client: client,
-            presentQuitPrompt: { .restoreDefaultsAndQuit },
-            terminateApp: { terminateCount += 1 }
-        )
-
+        let viewModel = AppViewModel(client: client)
+        viewModel.batteryLevel = 20
         await viewModel.refreshStatus()
-        viewModel.snapshot = PMSetSnapshot(disableSleep: true, lidWake: false, summary: "changed")
-        viewModel.requestQuit()
-        await client.waitForMutationCallCount(1)
-        await client.waitForIdleMutations()
-
-        XCTAssertEqual(terminateCount, 1)
-        XCTAssertEqual(client.restoreDefaultsCallCount, 1)
-    }
-
-    @MainActor
-    func testRequestQuitKeepAndQuitSkipsRestore() async {
-        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
-        let client = FakePowerDaemonClient()
-        client.daemonStatus = .enabled
-        client.fetchStatusResult = .success(
-            PowerHelperStatus(
-                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "initial"),
-                source: .helper
-            )
-        )
-
-        var terminateCount = 0
-        let viewModel = AppViewModel(
-            settingsStore: store,
-            client: client,
-            presentQuitPrompt: { .keepAndQuit },
-            terminateApp: { terminateCount += 1 }
-        )
-
-        await viewModel.refreshStatus()
-        viewModel.snapshot = PMSetSnapshot(disableSleep: true, lidWake: false, summary: "changed")
-        viewModel.requestQuit()
-
-        XCTAssertEqual(terminateCount, 1)
-        XCTAssertEqual(client.restoreDefaultsCallCount, 0)
-    }
-
-    @MainActor
-    func testStartTimedKeepAwakeSchedulesRestoreWhenStatusRefreshFails() async {
-        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
-        let client = FakePowerDaemonClient()
-        client.daemonStatus = .enabled
-        client.fetchStatusResult = .failure(
-            NSError(domain: "Test", code: 2, userInfo: [NSLocalizedDescriptionKey: "refresh failed"])
-        )
-
-        let viewModel = AppViewModel(settingsStore: store, client: client)
-        viewModel.startTimedKeepAwake(minutes: 30)
         await client.waitForMutationCallCount(1)
         await client.waitForIdleMutations()
 
         XCTAssertEqual(client.setDisableSleepCallCount, 1)
-        XCTAssertNotNil(viewModel.timedKeepAwakeEndDate)
-        XCTAssertEqual(viewModel.lastError, "refresh failed")
+        XCTAssertEqual(client.lastDisableSleepValue, false)
     }
 
     @MainActor
-    func testUnregisterDaemonFailureUpdatesDisplayedStatus() {
-        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
+    func testLowBatteryProtectionDisabledSkipsAutoDisable() async {
         let client = FakePowerDaemonClient()
-        client.daemonStatus = .enabled
-        client.daemonStatusAfterUnregisterAttempt = .notRegistered
-        client.unregisterDaemonError = NSError(domain: "Test", code: 3, userInfo: [NSLocalizedDescriptionKey: "unregister failed"])
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: true, lidWake: true, summary: "awake"),
+                source: .helper
+            )
+        )
 
-        let viewModel = AppViewModel(settingsStore: store, client: client)
-        viewModel.daemonStatus = .enabled
-        viewModel.unregisterDaemon()
+        let viewModel = AppViewModel(client: client)
+        viewModel.batteryLevel = 20
+        viewModel.isLowBatteryProtectionEnabled = false
+        await viewModel.refreshStatus()
 
-        XCTAssertEqual(viewModel.daemonStatus, .notRegistered)
-        XCTAssertEqual(viewModel.lastError, "unregister failed")
+        XCTAssertEqual(client.setDisableSleepCallCount, 0)
     }
 
-    func testPMSetParserReadsValues() {
-        let text = """
-        System-wide power settings:
-         SleepDisabled\t\t1
-        Currently in use:
-         lidwake              0
-        """
-        let snapshot = PMSetParser.parse(text)
-        XCTAssertEqual(snapshot.disableSleep, true)
-        XCTAssertEqual(snapshot.lidWake, false)
+    @MainActor
+    func testRefreshStatusSanitizesErrorMessage() async {
+        let client = FakePowerDaemonClient()
+        let longLine = String(repeating: "x", count: 250)
+        client.fetchStatusResult = .failure(
+            NSError(
+                domain: "Test",
+                code: 7,
+                userInfo: [NSLocalizedDescriptionKey: "\(longLine)\nnew-line"]
+            )
+        )
+
+        let viewModel = AppViewModel(client: client)
+        await viewModel.refreshStatus()
+
+        let message = viewModel.lastError ?? ""
+        XCTAssertFalse(message.isEmpty)
+        XCTAssertFalse(message.contains("\n"))
+        XCTAssertLessThanOrEqual(message.count, "Refresh status failed: ".count + 200)
     }
 
-    func testPMSetParserHandlesMissingKeys() {
-        let text = """
-        System-wide power settings:
-         standby              1
-        """
-        let snapshot = PMSetParser.parse(text)
-        XCTAssertNil(snapshot.disableSleep)
-        XCTAssertNil(snapshot.lidWake)
+    @MainActor
+    func testToggleHelperSuccessRefreshesStatus() async {
+        let client = FakePowerDaemonClient()
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "after-toggle-helper"),
+                source: .helper
+            )
+        )
+
+        let viewModel = AppViewModel(client: client)
+        viewModel.toggleHelper()
+        await client.waitForFetchStatusCallCount(1)
+        await Task.yield()
+
+        XCTAssertEqual(client.fetchStatusCallCount, 1)
+        XCTAssertEqual(viewModel.isHelperEnabled, false)
+        XCTAssertEqual(viewModel.snapshot.summary, "after-toggle-helper")
+        XCTAssertNil(viewModel.lastError)
     }
 
-    func testPMSetParserTrimsSummary() {
-        let text = """
+    @MainActor
+    func testToggleHelperFailureSurfacesErrorAndSkipsRefresh() async {
+        let client = FakePowerDaemonClient()
+        client.setHelperEnabledShouldFail = true
 
-        System-wide power settings:
-         SleepDisabled 0
-         lidwake       1
+        let viewModel = AppViewModel(client: client)
+        viewModel.toggleHelper()
+        await Task.yield()
 
-        """
-        let snapshot = PMSetParser.parse(text)
-        XCTAssertEqual(snapshot.disableSleep, false)
-        XCTAssertEqual(snapshot.lidWake, true)
-        XCTAssertTrue(snapshot.summary.hasPrefix("System-wide power settings:"))
-        XCTAssertFalse(snapshot.summary.hasSuffix("\n"))
+        XCTAssertEqual(client.fetchStatusCallCount, 0)
+        XCTAssertEqual(viewModel.isHelperEnabled, true)
+        XCTAssertEqual(viewModel.lastError, "Failed to disable helper: approval missing")
+    }
+
+    @MainActor
+    func testStartupSkipsRegistrationAndRefreshInTestEnvironment() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+        viewModel.startup()
+        await Task.yield()
+
+        XCTAssertEqual(client.registerDaemonCallCount, 0)
+        XCTAssertEqual(client.fetchStatusCallCount, 0)
+    }
+
+    @MainActor
+    func testStartupRegistersAndRefreshesOutsideTestEnvironment() async {
+        let client = FakePowerDaemonClient()
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: true, lidWake: true, summary: "startup"),
+                source: .helper
+            )
+        )
+
+        let viewModel = AppViewModel(client: client, isTestEnvironment: false)
+        viewModel.startup()
+        await client.waitForFetchStatusCallCount(1)
+        await Task.yield()
+
+        XCTAssertEqual(client.registerDaemonCallCount, 1)
+        XCTAssertEqual(client.fetchStatusCallCount, 1)
+        XCTAssertEqual(viewModel.snapshot.summary, "startup")
+
+        viewModel.startup()
+        await Task.yield()
+        XCTAssertEqual(client.registerDaemonCallCount, 1)
+        XCTAssertEqual(client.fetchStatusCallCount, 1)
+    }
+
+    @MainActor
+    func testStartupStillRefreshesWhenRegisterFailsOutsideTestEnvironment() async {
+        let client = FakePowerDaemonClient()
+        client.registerDaemonResult = .failure(
+            NSError(domain: "Test", code: 11, userInfo: [NSLocalizedDescriptionKey: "register failed"])
+        )
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "after-failed-register"),
+                source: .localFallback
+            )
+        )
+
+        let viewModel = AppViewModel(client: client, isTestEnvironment: false)
+        viewModel.startup()
+        await client.waitForFetchStatusCallCount(1)
+        await Task.yield()
+
+        XCTAssertEqual(client.registerDaemonCallCount, 1)
+        XCTAssertEqual(client.fetchStatusCallCount, 1)
+        XCTAssertEqual(viewModel.snapshot.summary, "after-failed-register")
+    }
+
+    @MainActor
+    func testStartupShowsRegisterErrorUntilRefreshCompletes() async {
+        let client = FakePowerDaemonClient()
+        client.registerDaemonResult = .failure(
+            NSError(domain: "Test", code: 12, userInfo: [NSLocalizedDescriptionKey: "approval required"])
+        )
+        client.holdFetchStatus = true
+
+        let viewModel = AppViewModel(client: client, isTestEnvironment: false)
+        viewModel.startup()
+        await client.waitForFetchStatusCallCount(1)
+
+        XCTAssertEqual(viewModel.lastError, "approval required")
+
+        client.resumeHeldFetchStatus()
+        await Task.yield()
+    }
+
+    @MainActor
+    func testTimerZeroMinutesDisablesNoSleepWhenActive() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client)
+        viewModel.snapshot = PMSetSnapshot(disableSleep: true, lidWake: true, summary: "awake")
+
+        viewModel.startTimer(minutes: 0)
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+        await Task.yield()
+
+        XCTAssertEqual(client.lastDisableSleepValue, false)
+        XCTAssertNil(viewModel.remainingSeconds)
     }
 
     func testTimedProcessRunnerReturnsOutputForSuccess() {
@@ -377,145 +306,249 @@ final class ControlPowerTests: XCTestCase {
         XCTAssertFalse(result.success)
         XCTAssertTrue(result.timedOut)
     }
-
-    private func makeTemporarySettingsURL(testName: String) -> URL {
-        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent("ControlPowerTests", isDirectory: true)
-            .appendingPathComponent(testName.replacingOccurrences(of: " ", with: "_"), isDirectory: true)
-        try? FileManager.default.removeItem(at: directory)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory.appendingPathComponent("settings.json")
-    }
 }
 
-@MainActor
-private final class FakePowerDaemonClient: PowerDaemonClientProtocol {
-    var daemonStatus: SMAppService.Status = .notRegistered
-    var fetchStatusResult: Result<PowerHelperStatus, Error> = .success(
-        PowerHelperStatus(
-            snapshot: PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "default"),
-            source: .localFallback
+private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
+    private struct State {
+        var registerDaemonResult: Result<Void, Error> = .success(())
+        var fetchStatusResult: Result<PowerHelperStatus, Error> = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "default"),
+                source: .localFallback
+            )
         )
-    )
-    var holdFetchStatus = false
-    var restoreDefaultsResult: Result<Void, Error> = .success(())
-    var unregisterDaemonError: Error?
-    var daemonStatusAfterUnregisterAttempt: SMAppService.Status?
-    private(set) var fetchStatusCallCount = 0
-    private(set) var setDisableSleepCallCount = 0
-    private(set) var setLidWakeCallCount = 0
-    private(set) var restoreDefaultsCallCount = 0
-    private(set) var applyPresetCallCount = 0
-    private(set) var maxConcurrentMutationCalls = 0
-    private var activeMutationCalls = 0
-    private var fetchStatusCountWait: (expected: Int, continuation: CheckedContinuation<Void, Never>)?
-    private var mutationCountWait: (expected: Int, continuation: CheckedContinuation<Void, Never>)?
-    private var idleMutationWait: CheckedContinuation<Void, Never>?
-    private var heldFetchStatusContinuation: CheckedContinuation<Void, Never>?
+        var helperEnabled = true
+        var setHelperEnabledShouldFail = false
+        var holdFetchStatus = false
+        var restoreDefaultsResult: Result<Void, Error> = .success(())
+        var registerDaemonCallCount = 0
+        var fetchStatusCallCount = 0
+        var setDisableSleepCallCount = 0
+        var restoreDefaultsCallCount = 0
+        var maxConcurrentMutationCalls = 0
+        var lastDisableSleepValue: Bool?
+        var activeMutationCalls = 0
+        var fetchStatusCountWait: (expected: Int, continuation: CheckedContinuation<Void, Never>)?
+        var mutationCountWait: (expected: Int, continuation: CheckedContinuation<Void, Never>)?
+        var idleMutationWait: CheckedContinuation<Void, Never>?
+        var heldFetchStatusContinuation: CheckedContinuation<Void, Never>?
 
-    func registerDaemon() throws {}
-
-    func unregisterDaemon() throws {
-        if let daemonStatusAfterUnregisterAttempt {
-            daemonStatus = daemonStatusAfterUnregisterAttempt
-        }
-        if let unregisterDaemonError {
-            throw unregisterDaemonError
+        var totalMutationCallCount: Int {
+            setDisableSleepCallCount + restoreDefaultsCallCount
         }
     }
 
-    func openLoginItemsSettings() {}
+    private let state = Mutex(State())
 
-    func setLaunchAtLogin(enabled: Bool) throws {}
+    var registerDaemonResult: Result<Void, Error> {
+        get { state.withLock { $0.registerDaemonResult } }
+        set { state.withLock { $0.registerDaemonResult = newValue } }
+    }
 
+    var fetchStatusResult: Result<PowerHelperStatus, Error> {
+        get { state.withLock { $0.fetchStatusResult } }
+        set { state.withLock { $0.fetchStatusResult = newValue } }
+    }
+
+    var helperEnabled: Bool {
+        get { state.withLock { $0.helperEnabled } }
+        set { state.withLock { $0.helperEnabled = newValue } }
+    }
+
+    var setHelperEnabledShouldFail: Bool {
+        get { state.withLock { $0.setHelperEnabledShouldFail } }
+        set { state.withLock { $0.setHelperEnabledShouldFail = newValue } }
+    }
+
+    var holdFetchStatus: Bool {
+        get { state.withLock { $0.holdFetchStatus } }
+        set { state.withLock { $0.holdFetchStatus = newValue } }
+    }
+
+    var restoreDefaultsResult: Result<Void, Error> {
+        get { state.withLock { $0.restoreDefaultsResult } }
+        set { state.withLock { $0.restoreDefaultsResult = newValue } }
+    }
+
+    var fetchStatusCallCount: Int { state.withLock { $0.fetchStatusCallCount } }
+    var registerDaemonCallCount: Int { state.withLock { $0.registerDaemonCallCount } }
+    var setDisableSleepCallCount: Int { state.withLock { $0.setDisableSleepCallCount } }
+    var restoreDefaultsCallCount: Int { state.withLock { $0.restoreDefaultsCallCount } }
+    var maxConcurrentMutationCalls: Int { state.withLock { $0.maxConcurrentMutationCalls } }
+    var lastDisableSleepValue: Bool? { state.withLock { $0.lastDisableSleepValue } }
+
+    func registerDaemonIfNeeded() throws {
+        let result = state.withLock { state in
+            state.registerDaemonCallCount += 1
+            return state.registerDaemonResult
+        }
+        try result.get()
+    }
+
+    func isHelperEnabled() -> Bool {
+        state.withLock { $0.helperEnabled }
+    }
+
+    func setHelperEnabled(_ enabled: Bool) throws {
+        let shouldFail = state.withLock { $0.setHelperEnabledShouldFail }
+        if shouldFail {
+            throw FakePowerDaemonClientError.approvalMissing
+        }
+        state.withLock { $0.helperEnabled = enabled }
+    }
+
+    @MainActor
     func waitForFetchStatusCallCount(_ expected: Int) async {
-        guard fetchStatusCallCount < expected else { return }
+        if state.withLock({ $0.fetchStatusCallCount >= expected }) {
+            return
+        }
         await withCheckedContinuation { continuation in
-            fetchStatusCountWait = (expected, continuation)
+            let shouldResumeNow = state.withLock { state in
+                if state.fetchStatusCallCount >= expected {
+                    return true
+                }
+                state.fetchStatusCountWait = (expected, continuation)
+                return false
+            }
+            if shouldResumeNow {
+                continuation.resume()
+            }
         }
     }
 
+    @MainActor
     func waitForMutationCallCount(_ expected: Int) async {
-        guard totalMutationCallCount < expected else { return }
+        if state.withLock({ $0.totalMutationCallCount >= expected }) {
+            return
+        }
         await withCheckedContinuation { continuation in
-            mutationCountWait = (expected, continuation)
+            let shouldResumeNow = state.withLock { state in
+                if state.totalMutationCallCount >= expected {
+                    return true
+                }
+                state.mutationCountWait = (expected, continuation)
+                return false
+            }
+            if shouldResumeNow {
+                continuation.resume()
+            }
         }
     }
 
+    @MainActor
     func waitForIdleMutations() async {
-        guard activeMutationCalls > 0 else { return }
+        if state.withLock({ $0.activeMutationCalls == 0 }) {
+            return
+        }
         await withCheckedContinuation { continuation in
-            idleMutationWait = continuation
+            let shouldResumeNow = state.withLock { state in
+                if state.activeMutationCalls == 0 {
+                    return true
+                }
+                state.idleMutationWait = continuation
+                return false
+            }
+            if shouldResumeNow {
+                continuation.resume()
+            }
         }
     }
 
     func resumeHeldFetchStatus() {
-        heldFetchStatusContinuation?.resume()
-        heldFetchStatusContinuation = nil
+        let continuation = state.withLock { state in
+            let continuation = state.heldFetchStatusContinuation
+            state.heldFetchStatusContinuation = nil
+            return continuation
+        }
+        continuation?.resume()
     }
 
     func fetchStatus() async throws -> PowerHelperStatus {
-        fetchStatusCallCount += 1
-        resolveFetchStatusCountWaitIfNeeded()
-        if holdFetchStatus {
+        let (shouldHold, waitContinuation) = state.withLock { state in
+            state.fetchStatusCallCount += 1
+            let waitContinuation: CheckedContinuation<Void, Never>?
+            if let wait = state.fetchStatusCountWait, state.fetchStatusCallCount >= wait.expected {
+                waitContinuation = wait.continuation
+                state.fetchStatusCountWait = nil
+            } else {
+                waitContinuation = nil
+            }
+            return (state.holdFetchStatus, waitContinuation)
+        }
+        waitContinuation?.resume()
+
+        if shouldHold {
             await withCheckedContinuation { continuation in
-                heldFetchStatusContinuation = continuation
+                state.withLock { $0.heldFetchStatusContinuation = continuation }
             }
         }
-        return try fetchStatusResult.get()
+
+        return try state.withLock { state in
+            try state.fetchStatusResult.get()
+        }
     }
 
     func setDisableSleep(_ enabled: Bool) async throws {
-        setDisableSleepCallCount += 1
-        resolveMutationCountWaitIfNeeded()
-        await withMutationTracking()
-    }
-
-    func setLidWake(_ enabled: Bool) async throws {
-        setLidWakeCallCount += 1
-        resolveMutationCountWaitIfNeeded()
+        let waitContinuation = state.withLock { state -> CheckedContinuation<Void, Never>? in
+            state.lastDisableSleepValue = enabled
+            state.setDisableSleepCallCount += 1
+            if let wait = state.mutationCountWait, state.totalMutationCallCount >= wait.expected {
+                state.mutationCountWait = nil
+                return wait.continuation
+            }
+            return nil
+        }
+        waitContinuation?.resume()
         await withMutationTracking()
     }
 
     func restoreDefaults() async throws {
-        restoreDefaultsCallCount += 1
-        resolveMutationCountWaitIfNeeded()
+        let (waitContinuation, result) = state.withLock { state in
+            state.restoreDefaultsCallCount += 1
+            let waitContinuation: CheckedContinuation<Void, Never>?
+            if let wait = state.mutationCountWait, state.totalMutationCallCount >= wait.expected {
+                state.mutationCountWait = nil
+                waitContinuation = wait.continuation
+            } else {
+                waitContinuation = nil
+            }
+            return (waitContinuation, state.restoreDefaultsResult)
+        }
+        waitContinuation?.resume()
         await withMutationTracking()
-        try restoreDefaultsResult.get()
-    }
-
-    func applyPreset(_ preset: PowerPreset) async throws {
-        applyPresetCallCount += 1
-        resolveMutationCountWaitIfNeeded()
-        await withMutationTracking()
+        try result.get()
     }
 
     private func withMutationTracking() async {
-        activeMutationCalls += 1
-        if activeMutationCalls > maxConcurrentMutationCalls {
-            maxConcurrentMutationCalls = activeMutationCalls
+        state.withLock { state in
+            state.activeMutationCalls += 1
+            if state.activeMutationCalls > state.maxConcurrentMutationCalls {
+                state.maxConcurrentMutationCalls = state.activeMutationCalls
+            }
         }
+
         await Task.yield()
-        activeMutationCalls -= 1
-        if activeMutationCalls == 0 {
-            idleMutationWait?.resume()
-            idleMutationWait = nil
+
+        let idleContinuation = state.withLock { state -> CheckedContinuation<Void, Never>? in
+            state.activeMutationCalls -= 1
+            guard state.activeMutationCalls == 0 else {
+                return nil
+            }
+            let continuation = state.idleMutationWait
+            state.idleMutationWait = nil
+            return continuation
         }
+        idleContinuation?.resume()
     }
+}
 
-    private var totalMutationCallCount: Int {
-        setDisableSleepCallCount + setLidWakeCallCount + restoreDefaultsCallCount + applyPresetCallCount
-    }
+private enum FakePowerDaemonClientError: LocalizedError, Sendable {
+    case approvalMissing
 
-    private func resolveFetchStatusCountWaitIfNeeded() {
-        guard let wait = fetchStatusCountWait, fetchStatusCallCount >= wait.expected else { return }
-        fetchStatusCountWait = nil
-        wait.continuation.resume()
-    }
-
-    private func resolveMutationCountWaitIfNeeded() {
-        guard let wait = mutationCountWait, totalMutationCallCount >= wait.expected else { return }
-        mutationCountWait = nil
-        wait.continuation.resume()
+    var errorDescription: String? {
+        switch self {
+        case .approvalMissing:
+            return "approval missing"
+        }
     }
 }

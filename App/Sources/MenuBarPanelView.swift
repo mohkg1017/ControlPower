@@ -1,166 +1,123 @@
+import ControlPowerCore
 import SwiftUI
 
 struct MenuBarPanelView: View {
-    @ObservedObject var viewModel: AppViewModel
+    @Bindable var viewModel: AppViewModel
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
+    let quit: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(spacing: 0) {
+            header
+
+            Divider()
+
+            statusAndActions
+                .padding(16)
+
+            Divider()
+
+            footer
+        }
+        .frame(width: 300)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var header: some View {
+        HStack {
             Label("ControlPower", systemImage: "bolt.shield")
                 .font(.headline)
+                .foregroundStyle(Color.accentColor)
 
-            LabeledContent("Keep Awake Override") {
-                Text(boolText(viewModel.snapshot.disableSleep))
-                    .font(.system(.caption, design: .monospaced).weight(.medium))
-            }
-            LabeledContent("Wake on Lid Open") {
-                Text(boolText(viewModel.snapshot.lidWake))
-                    .font(.system(.caption, design: .monospaced).weight(.medium))
-            }
-            LabeledContent("Preset") {
-                Text(viewModel.selectedPreset.title)
-                    .font(.system(.caption, design: .monospaced).weight(.medium))
-            }
-            LabeledContent("Helper") {
-                Label(viewModel.daemonStatusText(), systemImage: helperStatusSymbol)
-                    .font(.caption)
-                    .foregroundStyle(helperStatusTint)
-            }
+            Spacer()
 
-            Divider()
-
-            ControlGroup {
-                Button("Apply Saved Preset", systemImage: "play.fill") {
-                    viewModel.applySelectedPreset()
-                }
-                Button((viewModel.snapshot.disableSleep ?? false) ? "Disable Keep Awake" : "Enable Keep Awake", systemImage: "moon.zzz.fill") {
-                    viewModel.toggleDisableSleep()
-                }
-                Button((viewModel.snapshot.lidWake ?? true) ? "Disable Lid Wake" : "Enable Lid Wake", systemImage: "laptopcomputer") {
-                    viewModel.toggleLidWake()
-                }
-                Button("Restore Defaults", systemImage: "arrow.uturn.backward.circle", role: .destructive) {
-                    viewModel.restoreDefaults()
-                }
-            }
-            .disabled(viewModel.isBusy || !viewModel.helperReadyForCommands)
-
-            Menu("Apply Preset", systemImage: "slider.horizontal.3") {
-                ForEach(PowerPreset.allCases) { preset in
-                    Button(preset.title) {
-                        viewModel.applyPreset(preset)
-                    }
-                }
-            }
-            .disabled(viewModel.isBusy || !viewModel.helperReadyForCommands)
-
-            Menu("Timed Keep Awake", systemImage: "timer") {
-                Button("30 minutes") {
-                    viewModel.startTimedKeepAwake(minutes: 30)
-                }
-                Button("1 hour") {
-                    viewModel.startTimedKeepAwake(minutes: 60)
-                }
-                Button("2 hours") {
-                    viewModel.startTimedKeepAwake(minutes: 120)
-                }
-                Divider()
-                Button("Cancel Timed Session", role: .destructive) {
-                    viewModel.cancelTimedKeepAwake()
-                }
-                .disabled(viewModel.timedKeepAwakeEndDate == nil)
-            }
-            .disabled(viewModel.isBusy || !viewModel.helperReadyForCommands)
-
-            HStack(spacing: 8) {
-                Stepper(value: Binding(
-                    get: { viewModel.customTimedKeepAwakeMinutes },
-                    set: { viewModel.setCustomTimedKeepAwakeMinutes($0) }
-                ), in: 5...720, step: 5) {
-                    Text("Custom: \(viewModel.customTimedKeepAwakeMinutes)m")
-                        .font(.caption)
-                }
-                Button("Start", systemImage: "hourglass.badge.plus") {
-                    viewModel.startCustomTimedKeepAwake()
-                }
-            }
-            .disabled(viewModel.isBusy || !viewModel.helperReadyForCommands)
-
-            if let endDate = viewModel.timedKeepAwakeEndDate {
-                Label("Timed keep awake ends at \(endDate.formatted(date: .omitted, time: .shortened))", systemImage: "timer")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Menu("Copy Terminal Command", systemImage: "terminal") {
-                ForEach(viewModel.terminalCommands) { item in
-                    Button(item.title) {
-                        viewModel.copyTerminalCommand(item)
-                    }
-                }
-            }
-
-            Divider()
-
-            Button("Refresh Status", systemImage: "arrow.clockwise") {
+            Button {
                 Task { await viewModel.refreshStatus() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .imageScale(.small)
             }
+            .buttonStyle(.plain)
             .disabled(viewModel.isBusy)
-            Button("Open Control Window", systemImage: "macwindow") {
+            .symbolEffect(.rotate, value: viewModel.isBusy)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private var statusAndActions: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(viewModel.statusTint.color.opacity(0.1))
+                        .frame(width: 44, height: 44)
+
+                    Image(systemName: viewModel.statusIconName)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(viewModel.statusTint.color)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(viewModel.statusTitle)
+                        .font(.system(.body, weight: .semibold))
+                    Text(viewModel.sourceText)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: disableSleepBinding)
+                .toggleStyle(.switch)
+                .disabled(viewModel.isBusy)
+            }
+
+            if let error = viewModel.lastError {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                    Text(error)
+                        .font(.caption2)
+                        .lineLimit(2)
+                    Spacer()
+                }
+                .padding(8)
+                .background(Color.red.opacity(0.05))
+                .cornerRadius(6)
+            }
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 20) {
+            Button("Open Window") {
                 openWindow(id: "main")
             }
-            Button("Open Settings", systemImage: "gearshape") {
-                openSettings()
-            }
-            Button("Open Login Items Settings", systemImage: "person.crop.circle.badge.checkmark") {
-                viewModel.openLoginItemsSettings()
-            }
+            .buttonStyle(.plain)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
 
-            if viewModel.helperNeedsApproval {
-                Label("Helper needs approval", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Spacer()
 
-            Divider()
-
-            Button("Quit", systemImage: "xmark.circle") {
-                viewModel.requestQuit()
+            Button("Quit") {
+                quit()
             }
-            .keyboardShortcut("q", modifiers: .command)
+            .buttonStyle(.plain)
+            .font(.subheadline)
+            .foregroundStyle(.red.opacity(0.8))
         }
-        .padding(12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color.black.opacity(0.03))
     }
 
-    private var helperStatusSymbol: String {
-        switch viewModel.daemonStatus {
-        case .enabled:
-            return "checkmark.seal.fill"
-        case .requiresApproval:
-            return "exclamationmark.triangle.fill"
-        case .notRegistered, .notFound:
-            return "xmark.seal"
-        @unknown default:
-            return "questionmark.circle"
-        }
-    }
+    // MARK: - Helpers
 
-    private var helperStatusTint: Color {
-        switch viewModel.daemonStatus {
-        case .enabled:
-            return .green
-        case .requiresApproval:
-            return .orange
-        case .notRegistered, .notFound:
-            return .secondary
-        @unknown default:
-            return .secondary
-        }
-    }
-
-    private func boolText(_ value: Bool?) -> String {
-        guard let value else { return "Unknown" }
-        return value ? "Enabled" : "Disabled"
+    private var disableSleepBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.snapshot.disableSleep ?? false },
+            set: { _ in viewModel.toggleDisableSleep() }
+        )
     }
 }

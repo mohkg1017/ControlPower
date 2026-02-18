@@ -4,12 +4,10 @@ ControlPower is a native macOS menu bar utility to manage sleep-related `pmset` 
 
 ## Features
 
-- Menu bar controls for `disablesleep` and `lidwake`
-- Presets for common power profiles
-- Saved preset picker with one-click apply in window/menu/commands
-- Timed keep-awake sessions (30m / 1h / 2h) with automatic restore
-- Helper status and registration controls
-- Settings for launch-at-login, auto-refresh, and quit safety prompt
+- One-click toggle for `sudo pmset -a disablesleep 1/0`
+- One-click toggle for `sudo pmset -a lidwake 0/1`
+- One-click restore defaults (`disablesleep 0`, `lidwake 1`)
+- Current status view using `pmset -g`
 
 ## Build
 
@@ -40,6 +38,8 @@ The installer now stages the new app and backs up any existing `/Applications/Co
 - Helper binary is embedded at `Contents/Resources/ControlPowerHelper` and exposed via Mach service `com.moe.controlpower.helper.mach`.
 - Helper starts on demand via Mach service instead of being forced to run continuously.
 - Use the `ControlPowerProfiling` scheme or `-configuration Profiling` for Instruments captures with hardened runtime profiling entitlements.
+- Verify release entitlements before distribution:
+  - `scripts/check-release-entitlements.sh /path/to/ControlPower.app`
 - CLI profiling helpers:
   - `scripts/record_time_profiler.sh`
   - `scripts/extract_time_samples.py`

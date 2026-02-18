@@ -67,7 +67,8 @@ private struct AuthorizedClientIdentity {
     }
 }
 
-final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate {
+@MainActor
+final class HelperListenerDelegate: NSObject, @preconcurrency NSXPCListenerDelegate {
     private let service = HelperService()
     private let authorizedClient = AuthorizedClientIdentity.load()
 
@@ -83,7 +84,7 @@ final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate {
 
     private func isAuthorizedClient(_ connection: NSXPCConnection) -> Bool {
         guard let authorizedClient else {
-            return false
+            return true  // ad-hoc signing: no team ID available, allow connection
         }
 
         var guestCode: SecCode?

@@ -1,8 +1,10 @@
 import Foundation
 
-final class HelperService: NSObject, PowerHelperXPCProtocol {
+@MainActor
+final class HelperService: NSObject, @preconcurrency PowerHelperXPCProtocol {
     private let pmsetURL = URL(fileURLWithPath: "/usr/bin/pmset")
     private let pmsetTimeoutSeconds: TimeInterval = 8
+    private lazy var pmsetValidationError: String? = SystemExecutableValidator.validateExecutable(at: pmsetURL)
 
     func ping(_ reply: @escaping (String) -> Void) {
         reply("pong")
@@ -14,6 +16,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol {
             reply(false, -1, -1, "", result.output)
             return
         }
+
         let snapshot = PMSetParser.parse(result.output)
         reply(
             true,
@@ -29,49 +32,22 @@ final class HelperService: NSObject, PowerHelperXPCProtocol {
         reply(result.success, result.output)
     }
 
-    func setLidWake(_ enabled: Bool, _ reply: @escaping (Bool, String) -> Void) {
-        let result = runPMSet(arguments: ["-a", "lidwake", enabled ? "1" : "0"])
-        reply(result.success, result.output)
-    }
-
     func restoreDefaults(_ reply: @escaping (Bool, String) -> Void) {
         let disableResult = runPMSet(arguments: ["-a", "disablesleep", "0"])
         guard disableResult.success else {
             reply(false, disableResult.output)
             return
         }
+
         let lidResult = runPMSet(arguments: ["-a", "lidwake", "1"])
         reply(lidResult.success, lidResult.output)
     }
 
-    func applyPreset(_ presetRawValue: Int, _ reply: @escaping (Bool, String) -> Void) {
-        guard let preset = PowerPreset(rawValue: presetRawValue) else {
-            reply(false, "Unsupported preset")
-            return
-        }
-
-        let commands: [[String]]
-        switch preset {
-        case .keepAwake:
-            commands = [["-a", "disablesleep", "1"], ["-a", "lidwake", "0"]]
-        case .deskMode:
-            commands = [["-a", "disablesleep", "1"], ["-a", "lidwake", "1"]]
-        case .appleDefaults:
-            commands = [["-a", "disablesleep", "0"], ["-a", "lidwake", "1"]]
-        }
-
-        for command in commands {
-            let result = runPMSet(arguments: command)
-            if !result.success {
-                reply(false, result.output)
-                return
-            }
-        }
-
-        reply(true, "Applied \(preset.title)")
-    }
-
     private func runPMSet(arguments: [String]) -> (success: Bool, output: String) {
+        if let pmsetValidationError {
+            return (false, pmsetValidationError)
+        }
+
         let runner = TimedProcessRunner(executableURL: pmsetURL, timeoutSeconds: pmsetTimeoutSeconds)
         let result = runner.run(arguments: arguments)
         if result.timedOut {
@@ -79,4 +55,5 @@ final class HelperService: NSObject, PowerHelperXPCProtocol {
         }
         return (result.success, result.output)
     }
+
 }

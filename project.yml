@@ -14,6 +14,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
     CODE_SIGN_STYLE: Automatic
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     FUSE_BUILD_SCRIPT_PHASES: YES
@@ -36,6 +37,7 @@ settings:
       ONLY_ACTIVE_ARCH: NO
       LLVM_LTO: YES_THIN
       DEAD_CODE_STRIPPING: YES
+      CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
 
 targets:
   ControlPowerHelper:
@@ -53,15 +55,37 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: ControlPowerHelper
         INFOPLIST_KEY_LSMinimumSystemVersion: "26.0"
 
+  ControlPowerCore:
+    type: framework
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: App/Sources/AppViewModel.swift
+      - path: App/Sources/PowerDaemonClient.swift
+      - path: Shared/Sources
+    dependencies:
+      - sdk: ServiceManagement.framework
+    settings:
+      base:
+        PRODUCT_NAME: ControlPowerCore
+        PRODUCT_BUNDLE_IDENTIFIER: com.moe.controlpower.core
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: ControlPowerCore
+        DEFINES_MODULE: YES
+        SKIP_INSTALL: YES
+
   ControlPower:
     type: application
     platform: macOS
     deploymentTarget: "26.0"
     sources:
       - path: App/Sources
-      - path: Shared/Sources
+        excludes:
+          - AppViewModel.swift
+          - PowerDaemonClient.swift
       - path: App/Resources/Assets.xcassets
       - path: App/Resources/Info.plist
+      - path: App/Resources/PrivacyInfo.xcprivacy
       - path: LaunchDaemons/com.moe.controlpower.helper.plist
         buildPhase:
           copyFiles:
@@ -70,6 +94,8 @@ targets:
     dependencies:
       - target: ControlPowerHelper
         embed: false
+      - target: ControlPowerCore
+        embed: true
       - sdk: ServiceManagement.framework
     postBuildScripts:
       - name: Embed Helper Binary
@@ -108,13 +134,13 @@ targets:
     sources:
       - path: Tests
     dependencies:
-      - target: ControlPower
+      - target: ControlPowerCore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.moe.controlpower.tests
         GENERATE_INFOPLIST_FILE: YES
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/ControlPower.app/Contents/MacOS/ControlPower"
-        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: ""
+        BUNDLE_LOADER: ""
 
 schemes:
   ControlPower:
@@ -141,3 +167,11 @@ schemes:
         - ControlPowerTests
     archive:
       config: Release
+  ControlPowerCoreTests:
+    build:
+      targets:
+        ControlPowerCore: all
+    test:
+      config: Debug
+      targets:
+        - ControlPowerTests

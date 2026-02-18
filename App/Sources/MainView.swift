@@ -1,341 +1,354 @@
+import ControlPowerCore
 import SwiftUI
-import ServiceManagement
 
 struct MainView: View {
-    let viewModel: AppViewModel
-    @ObservedObject var settingsStore: SettingsStore
-    @Environment(\.openSettings) private var openSettings
+    @Bindable var viewModel: AppViewModel
+    @State private var selectedTab: Tab? = .overview
 
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                MainHeaderView(viewModel: viewModel)
-
-                Text("Manage sleep behavior from the menu bar using a privileged helper.")
-                    .foregroundStyle(.secondary)
-
-                if settingsStore.settings.showThermalWarning {
-                    Label("These settings apply system-wide. Monitor device heat during long sessions.", systemImage: "thermometer.sun")
-                        .font(.callout)
-                        .foregroundStyle(.orange)
-                }
-
-                CurrentStatusSection(viewModel: viewModel)
-                QuickActionsSection(viewModel: viewModel)
-                PresetsSection(viewModel: viewModel)
-                HelperSection(viewModel: viewModel, openSettings: openSettings)
-                TerminalCommandsSection(viewModel: viewModel)
-
-                if let error = viewModel.lastError {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .textSelection(.enabled)
-                }
-
-                ActivitySection(entries: viewModel.logEntries)
-            }
-            .padding(16)
-        }
+    enum Tab: Hashable {
+        case overview
+        case settings
+        case advanced
     }
-}
-
-private struct MainHeaderView: View {
-    @ObservedObject var viewModel: AppViewModel
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Label("ControlPower", systemImage: "bolt.shield")
-                .font(.title2.weight(.semibold))
-            Spacer()
-            Text(viewModel.daemonStatusText())
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(statusTint(for: viewModel.daemonStatus).opacity(0.16))
-                .foregroundStyle(statusTint(for: viewModel.daemonStatus))
-                .clipShape(Capsule())
-            Button("Refresh", systemImage: "arrow.clockwise") {
-                Task { await viewModel.refreshStatus() }
-            }
-            .disabled(viewModel.isBusy)
-        }
-    }
-}
-
-private struct CurrentStatusSection: View {
-    @ObservedObject var viewModel: AppViewModel
-
-    var body: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-                statusRow(title: "Keep Awake Override", value: boolText(viewModel.snapshot.disableSleep))
-                statusRow(title: "Wake on Lid Open", value: boolText(viewModel.snapshot.lidWake))
-                statusRow(title: "Source", value: viewModel.statusSourceText())
-                Text(viewModel.snapshot.summary.isEmpty ? "No status output yet" : viewModel.snapshot.summary)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Label("Current Status", systemImage: "gauge.with.dots.needle.33percent")
-        }
-    }
-}
-
-private struct QuickActionsSection: View {
-    @ObservedObject var viewModel: AppViewModel
-
-    var body: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    ControlGroup {
-                        Button((viewModel.snapshot.disableSleep ?? false) ? "Disable Keep Awake" : "Enable Keep Awake", systemImage: "moon.zzz.fill") {
-                            viewModel.toggleDisableSleep()
-                        }
-                        Button((viewModel.snapshot.lidWake ?? true) ? "Disable Lid Wake" : "Enable Lid Wake", systemImage: "laptopcomputer") {
-                            viewModel.toggleLidWake()
-                        }
-                    }
-                    .disabled(viewModel.isBusy || !viewModel.helperReadyForCommands)
-
-                    Menu("Timed Keep Awake", systemImage: "timer") {
-                        Button("30 minutes") {
-                            viewModel.startTimedKeepAwake(minutes: 30)
-                        }
-                        Button("1 hour") {
-                            viewModel.startTimedKeepAwake(minutes: 60)
-                        }
-                        Button("2 hours") {
-                            viewModel.startTimedKeepAwake(minutes: 120)
-                        }
-                        Divider()
-                        Button("Cancel Timed Session", role: .destructive) {
-                            viewModel.cancelTimedKeepAwake()
-                        }
-                        .disabled(viewModel.timedKeepAwakeEndDate == nil)
-                    }
-                    .disabled(viewModel.isBusy || !viewModel.helperReadyForCommands)
-
-                    Spacer()
-
-                    Button("Restore Defaults", systemImage: "arrow.uturn.backward.circle", role: .destructive) {
-                        viewModel.restoreDefaults()
-                    }
-                    .disabled(viewModel.isBusy || !viewModel.helperReadyForCommands)
+        NavigationSplitView {
+            List(selection: $selectedTab) {
+                NavigationLink(value: Tab.overview) {
+                    Label("Overview", systemImage: "bolt.shield")
                 }
-
-                HStack(spacing: 12) {
-                    Stepper(value: Binding(
-                        get: { viewModel.customTimedKeepAwakeMinutes },
-                        set: { viewModel.setCustomTimedKeepAwakeMinutes($0) }
-                    ), in: 5...720, step: 5) {
-                        Text("Custom timer: \(viewModel.customTimedKeepAwakeMinutes) minutes")
-                    }
-                    .disabled(viewModel.isBusy || !viewModel.helperReadyForCommands)
-
-                    Button("Start Custom Timer", systemImage: "hourglass.badge.plus") {
-                        viewModel.startCustomTimedKeepAwake()
-                    }
-                    .disabled(viewModel.isBusy || !viewModel.helperReadyForCommands)
+                NavigationLink(value: Tab.settings) {
+                    Label("Settings", systemImage: "gear")
                 }
-
-                if let endDate = viewModel.timedKeepAwakeEndDate {
-                    Label("Timed keep awake ends at \(endDate.formatted(date: .omitted, time: .shortened))", systemImage: "timer")
-                        .font(.caption)
+                NavigationLink(value: Tab.advanced) {
+                    Label("Raw Status", systemImage: "terminal")
+                }
+            }
+            .navigationTitle("ControlPower")
+        } detail: {
+            ZStack {
+                tahoeBackground(activeTab: selectedTab)
+                
+                if let selectedTab {
+                    switch selectedTab {
+                    case .overview:
+                        overviewView
+                    case .settings:
+                        settingsView
+                    case .advanced:
+                        advancedView
+                    }
+                } else {
+                    Text("Select an item")
                         .foregroundStyle(.secondary)
                 }
             }
-        } label: {
-            Label("Quick Actions", systemImage: "switch.2")
+            .transition(.opacity)
         }
     }
-}
 
-private struct PresetsSection: View {
-    @ObservedObject var viewModel: AppViewModel
+    private var overviewView: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                statusHeader
 
-    var body: some View {
+                VStack(spacing: 16) {
+                    mainActionButton
+                    
+                    if viewModel.snapshot.disableSleep == true {
+                        timerControls
+                    }
+
+                    secondaryActions
+                }
+                .padding(.horizontal, 24)
+
+                if let error = viewModel.lastError {
+                    errorBanner(error)
+                        .padding(.horizontal, 24)
+                }
+            }
+            .padding(.vertical, 24)
+        }
+        .navigationTitle("Overview")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    Task { await viewModel.refreshStatus() }
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .disabled(viewModel.isBusy)
+            }
+        }
+    }
+
+    private var settingsView: some View {
+        Form {
+            Section {
+                Toggle("Low Battery Protection", isOn: $viewModel.isLowBatteryProtectionEnabled)
+                Text("Automatically turn off 'No Sleep' when battery is 20% or lower.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Power Safety")
+            }
+
+            Section {
+                Toggle("Launch Background Helper at Login", isOn: helperEnabledBinding)
+            } header: {
+                Text("Automation")
+            } footer: {
+                Text("The background helper is required for 'No Sleep' to function across reboots.")
+            }
+            
+            Section {
+                Button("Restore System Defaults") {
+                    viewModel.restoreDefaults()
+                }
+                .disabled(viewModel.isBusy)
+            } header: {
+                Text("Maintenance")
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Settings")
+    }
+
+    private var statusHeader: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(viewModel.statusTint.color.opacity(0.1))
+                    .frame(width: 80, height: 80)
+
+                Image(systemName: viewModel.statusIconName)
+                    .font(.system(size: 40, weight: .bold))
+                    .foregroundStyle(viewModel.statusTint.color)
+                    .symbolEffect(.bounce, value: viewModel.powerMode)
+            }
+
+            VStack(spacing: 4) {
+                Text(viewModel.statusTitle)
+                    .font(.title2.bold())
+
+                if let remaining = viewModel.remainingSeconds {
+                    Text("Expires in \(timeString(from: remaining))")
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.orange)
+                } else {
+                    Text(viewModel.statusDescription)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+    }
+
+    private var timerControls: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Picker("Saved Preset", selection: Binding(
-                        get: { viewModel.selectedPreset },
-                        set: { viewModel.setSelectedPreset($0) }
-                    )) {
-                        ForEach(PowerPreset.allCases) { preset in
-                            Text(preset.title).tag(preset)
-                        }
-                    }
-                    .pickerStyle(.menu)
-
+                    Label("Stay Awake For...", systemImage: "timer")
+                        .font(.subheadline.bold())
                     Spacer()
-
-                    Button("Apply Saved Preset", systemImage: "play.fill") {
-                        viewModel.applySelectedPreset()
+                    if viewModel.remainingSeconds != nil {
+                        Button("Cancel Timer", role: .destructive) {
+                            viewModel.cancelTimer()
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.red)
+                        .font(.caption.bold())
                     }
-                    .disabled(viewModel.isBusy || !viewModel.helperReadyForCommands)
                 }
-
-                ForEach(PowerPreset.allCases) { preset in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(preset.title)
-                                .font(.body.weight(.medium))
-                            Text(preset.detail)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                
+                HStack(spacing: 8) {
+                    ForEach([30, 60, 120, 240], id: \.self) { mins in
+                        Button {
+                            viewModel.startTimer(minutes: mins)
+                        } label: {
+                            Text(mins >= 60 ? "\(mins/60)h" : "\(mins)m")
+                                .frame(maxWidth: .infinity)
                         }
-                        Spacer()
-                        Button("Apply", systemImage: "play.fill") {
-                            viewModel.applyPreset(preset)
-                        }
-                        .disabled(viewModel.isBusy || !viewModel.helperReadyForCommands)
+                        .buttonStyle(.bordered)
+                        .tint(viewModel.selectedDurationMinutes == mins && viewModel.remainingSeconds != nil ? .orange : .secondary)
                     }
                 }
             }
-        } label: {
-            Label("Presets", systemImage: "slider.horizontal.3")
+            .padding(4)
         }
     }
-}
 
-private struct HelperSection: View {
-    @ObservedObject var viewModel: AppViewModel
-    let openSettings: OpenSettingsAction
-
-    var body: some View {
-        GroupBox {
+    private var mainActionButton: some View {
+        Button {
+            viewModel.toggleDisableSleep()
+        } label: {
             HStack {
-                Label("Status: \(viewModel.daemonStatusText())", systemImage: statusSymbol(for: viewModel.daemonStatus))
-                    .foregroundStyle(statusTint(for: viewModel.daemonStatus))
-                Spacer()
-                ControlGroup {
-                    Button("Register", systemImage: "plus.circle") {
-                        viewModel.registerDaemonIfNeeded()
-                    }
-                    .disabled(viewModel.daemonStatus == .enabled || viewModel.daemonStatus == .requiresApproval)
-                    Button("Unregister", systemImage: "minus.circle") {
-                        viewModel.unregisterDaemon()
-                    }
-                    .disabled(viewModel.daemonStatus == .notRegistered || viewModel.daemonStatus == .notFound)
-                    Button("Open App Settings", systemImage: "gearshape") {
-                        openSettings()
-                    }
-                    Button("Open Login Items", systemImage: "person.crop.circle.badge.checkmark") {
-                        viewModel.openLoginItemsSettings()
-                    }
-                }
+                Image(systemName: (viewModel.snapshot.disableSleep ?? false) ? "moon.zzz.fill" : "sun.max.fill")
+                Text((viewModel.snapshot.disableSleep ?? false) ? "Allow System Sleep" : "Prevent System Sleep")
+                    .fontWeight(.semibold)
             }
-
-            if viewModel.helperNeedsApproval {
-                Text("Helper registration is pending approval in System Settings > Login Items.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        } label: {
-            Label("Privileged Helper", systemImage: "lock.shield")
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
         }
+        .buttonStyle(.borderedProminent)
+        .tint(viewModel.snapshot.disableSleep == true ? .orange : .accentColor)
+        .controlSize(.large)
+        .disabled(viewModel.isBusy)
     }
-}
 
-private struct TerminalCommandsSection: View {
-    @ObservedObject var viewModel: AppViewModel
+    private var secondaryActions: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Diagnostics")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
 
-    var body: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(viewModel.terminalCommands) { item in
-                    HStack(alignment: .top, spacing: 10) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.title)
-                                .font(.body.weight(.medium))
-                            Text(item.command)
-                                .font(.caption.monospaced())
-                                .textSelection(.enabled)
-                            Text(item.detail)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+            GroupBox {
+                VStack(spacing: 0) {
+                    HStack {
+                        Label("Battery Level", systemImage: "battery.100")
                         Spacer()
-                        Button("Copy", systemImage: "doc.on.doc") {
-                            viewModel.copyTerminalCommand(item)
-                        }
-                        .buttonStyle(.borderless)
+                        Text("\(viewModel.batteryLevel)%")
+                            .foregroundStyle(viewModel.batteryLevel <= 20 ? .red : .secondary)
                     }
+                    .padding(.vertical, 8)
+
+                    Divider()
+
+                    HStack {
+                        Label("Helper Status", systemImage: viewModel.isHelperEnabled ? "checkmark.shield.fill" : "xmark.shield.fill")
+                            .foregroundStyle(viewModel.isHelperEnabled ? .green : .red)
+                        Spacer()
+                        Text(viewModel.isHelperEnabled ? "Active" : "Inactive")
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 8)
                 }
+                .padding(.horizontal, 4)
             }
-        } label: {
-            Label("Terminal Commands", systemImage: "terminal")
+        }
+    }
+
+    private var advancedView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Current pmset -g Output")
+                .font(.headline)
+
+            ScrollView {
+                Text(viewModel.snapshot.summary.isEmpty ? "No pmset output yet" : viewModel.snapshot.summary)
+                    .font(.system(.body, design: .monospaced))
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(nsColor: .textBackgroundColor).opacity(0.8))
+                    .cornerRadius(8)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(24)
+        .navigationTitle("Raw Status")
+    }
+
+    private func tahoeBackground(activeTab: Tab?) -> some View {
+        ZStack {
+            Color(nsColor: .windowBackgroundColor)
+            if activeTab == .overview {
+                AnimatedTahoeBackground()
+            } else {
+                StaticMeshLayer()
+                    .ignoresSafeArea()
+                    .blur(radius: 40)
+            }
+        }
+    }
+
+    private func errorBanner(_ message: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+            Text(message)
+                .font(.caption)
+            Spacer()
+        }
+        .padding(12)
+        .background(Color.red.opacity(0.1))
+        .cornerRadius(8)
+    }
+
+    // MARK: - Helpers
+
+    private func timeString(from totalSeconds: Int) -> String {
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let seconds = totalSeconds % 60
+        if hours > 0 {
+            return String(format: "%dh %02dm %02ds", hours, minutes, seconds)
+        }
+        return String(format: "%02dm %02ds", minutes, seconds)
+    }
+
+    private var helperEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.isHelperEnabled },
+            set: { _ in viewModel.toggleHelper() }
+        )
+    }
+
+}
+
+extension PowerStatusTint {
+    var color: Color {
+        switch self {
+        case .noSleep: return .orange
+        case .normal: return .green
+        case .unknown: return .secondary
         }
     }
 }
 
-private struct ActivitySection: View {
-    let entries: [LogEntry]
+private struct AnimatedTahoeBackground: View {
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1.0 / 12.0)) { context in
+            AnimatedMeshLayer(phase: context.date.timeIntervalSinceReferenceDate)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+private struct AnimatedMeshLayer: View {
+    let phase: TimeInterval
 
     var body: some View {
-        GroupBox {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(entries) { entry in
-                        HStack(alignment: .top, spacing: 8) {
-                            Text(entry.date.formatted(date: .omitted, time: .standard))
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
-                            Text(entry.message)
-                                .font(.callout)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-            }
-            .frame(minHeight: 140, maxHeight: 240)
-        } label: {
-            Label("Activity", systemImage: "clock.arrow.circlepath")
-        }
+        let x = Float(0.5 + (sin(phase * 0.5) * 0.3))
+        let y = Float(0.5 + (cos(phase * 0.4) * 0.3))
+        let points: [SIMD2<Float>] = [
+            .init(0, 0), .init(0.5, 0), .init(1, 0),
+            .init(0, 0.5), .init(x, y), .init(1, 0.5),
+            .init(0, 1), .init(0.5, 1), .init(1, 1)
+        ]
+
+        MeshGradient(width: 3, height: 3, points: points, colors: [
+            .accentColor.opacity(0.1), .accentColor.opacity(0.05), .purple.opacity(0.1),
+            .blue.opacity(0.05), .accentColor.opacity(0.15), .blue.opacity(0.1),
+            .purple.opacity(0.05), .blue.opacity(0.05), .accentColor.opacity(0.1)
+        ])
+        .ignoresSafeArea()
+        .blur(radius: 40)
     }
 }
 
-private func boolText(_ value: Bool?) -> String {
-    guard let value else { return "Unknown" }
-    return value ? "Enabled" : "Disabled"
-}
-
-private func statusRow(title: String, value: String) -> some View {
-    LabeledContent {
-        Text(value)
-            .font(.body.weight(.medium))
-    } label: {
-        Text(title)
-            .font(.body)
-    }
-}
-
-private func statusSymbol(for status: SMAppService.Status) -> String {
-    switch status {
-    case .enabled:
-        return "checkmark.seal.fill"
-    case .requiresApproval:
-        return "exclamationmark.triangle.fill"
-    case .notRegistered, .notFound:
-        return "xmark.seal"
-    @unknown default:
-        return "questionmark.circle"
-    }
-}
-
-private func statusTint(for status: SMAppService.Status) -> Color {
-    switch status {
-    case .enabled:
-        return .green
-    case .requiresApproval:
-        return .orange
-    case .notRegistered, .notFound:
-        return .secondary
-    @unknown default:
-        return .secondary
+private struct StaticMeshLayer: View {
+    var body: some View {
+        MeshGradient(width: 3, height: 3, points: [
+            .init(0, 0), .init(0.5, 0), .init(1, 0),
+            .init(0, 0.5), .init(0.5, 0.5), .init(1, 0.5),
+            .init(0, 1), .init(0.5, 1), .init(1, 1)
+        ], colors: [
+            .accentColor.opacity(0.1), .accentColor.opacity(0.05), .purple.opacity(0.1),
+            .blue.opacity(0.05), .accentColor.opacity(0.15), .blue.opacity(0.1),
+            .purple.opacity(0.05), .blue.opacity(0.05), .accentColor.opacity(0.1)
+        ])
     }
 }

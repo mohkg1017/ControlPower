@@ -1,363 +1,279 @@
-import AppKit
 import Foundation
-import ServiceManagement
+import Observation
 
-struct LogEntry: Identifiable {
-    let id = UUID()
-    let date: Date
-    let message: String
+public enum PowerMode {
+    case noSleep
+    case normal
+    case unknown
 }
 
-struct TerminalCommand: Identifiable {
-    let id: String
-    let title: String
-    let command: String
-    let detail: String
-}
-
-enum QuitPromptChoice {
-    case keepAndQuit
-    case restoreDefaultsAndQuit
-    case cancel
+public enum PowerStatusTint {
+    case noSleep
+    case normal
+    case unknown
 }
 
 @MainActor
-final class AppViewModel: ObservableObject {
-    @Published var snapshot = PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "No status yet")
-    @Published var statusSource: PowerStatusSource = .localFallback
-    @Published var logEntries: [LogEntry] = []
-    @Published var daemonStatus: SMAppService.Status = .notRegistered
-    @Published var isBusy = false
-    @Published var lastError: String?
-    @Published var timedKeepAwakeEndDate: Date?
+@Observable
+public final class AppViewModel {
+    public var snapshot = PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "No status yet")
+    public var statusSource: PowerStatusSource = .localFallback
+    public var isHelperEnabled = false
+    public var isBusy = false
+    public var lastError: String?
+
+    public var remainingSeconds: Int?
+    public var selectedDurationMinutes: Int = 60
+    private var timerTask: Task<Void, Never>?
+
+    public var batteryLevel: Int = 100
+    public var isLowBatteryProtectionEnabled: Bool = true
+    private var batteryMonitorTask: Task<Void, Never>?
 
     private let client: any PowerDaemonClientProtocol
-    private let settingsStore: SettingsStore
-    private var refreshTask: Task<Void, Never>?
-    private var startupSnapshot: PMSetSnapshot?
-    private var timedKeepAwakeTask: Task<Void, Never>?
+    private let isTestEnvironment: Bool
     private var pendingMutations: [() async -> Void] = []
     private var isProcessingMutations = false
     private var hasStarted = false
-    private let presentQuitPrompt: @MainActor () -> QuitPromptChoice
-    private let terminateApp: @MainActor () -> Void
-    private static let maxLogEntries = 300
 
-    var helperReadyForCommands: Bool {
-        daemonStatus == .enabled
-    }
-
-    var helperNeedsApproval: Bool {
-        daemonStatus == .requiresApproval
-    }
-
-    var selectedPreset: PowerPreset {
-        PowerPreset(rawValue: settingsStore.settings.selectedPresetRawValue) ?? .appleDefaults
-    }
-
-    var customTimedKeepAwakeMinutes: Int {
-        settingsStore.settings.customTimedKeepAwakeMinutes
-    }
-
-    var terminalCommands: [TerminalCommand] {
-        [
-            TerminalCommand(
-                id: "disable-on",
-                title: "Disable Sleep",
-                command: "sudo pmset -a disablesleep 1",
-                detail: "Turns global sleep off."
-            ),
-            TerminalCommand(
-                id: "disable-off",
-                title: "Enable Sleep (Default)",
-                command: "sudo pmset -a disablesleep 0",
-                detail: "Restores normal global sleep behavior."
-            ),
-            TerminalCommand(
-                id: "lidwake-off",
-                title: "Disable Lid Wake",
-                command: "sudo pmset -a lidwake 0",
-                detail: "Prevents lid open from triggering wake."
-            ),
-            TerminalCommand(
-                id: "lidwake-on",
-                title: "Enable Lid Wake (Default)",
-                command: "sudo pmset -a lidwake 1",
-                detail: "Restores normal lid wake behavior."
-            ),
-            TerminalCommand(
-                id: "status",
-                title: "Check Current Status",
-                command: "pmset -g",
-                detail: "Prints the current power management configuration."
-            )
-        ]
-    }
-
-    init(
-        settingsStore: SettingsStore,
+    @MainActor
+    public init(
         client: any PowerDaemonClientProtocol = PowerDaemonClient(),
-        presentQuitPrompt: @escaping @MainActor () -> QuitPromptChoice = { AppViewModel.defaultQuitPromptChoice() },
-        terminateApp: @escaping @MainActor () -> Void = { NSApp.terminate(nil) }
+        isTestEnvironment: Bool = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     ) {
-        self.settingsStore = settingsStore
         self.client = client
-        self.presentQuitPrompt = presentQuitPrompt
-        self.terminateApp = terminateApp
+        self.isTestEnvironment = isTestEnvironment
+        self.isHelperEnabled = client.isHelperEnabled()
+        if !isTestEnvironment {
+            setupBatteryMonitoring()
+        }
     }
 
-    func startup() {
+    @MainActor
+    deinit {
+        timerTask?.cancel()
+        batteryMonitorTask?.cancel()
+    }
+
+    public var powerMode: PowerMode {
+        guard let disableSleep = snapshot.disableSleep else {
+            return .unknown
+        }
+        return disableSleep ? .noSleep : .normal
+    }
+
+    public var noSleepText: String {
+        guard let disableSleep = snapshot.disableSleep else { return "Unknown" }
+        return disableSleep ? "ON" : "OFF"
+    }
+
+    public var statusIconName: String {
+        switch powerMode {
+        case .noSleep: return "moon.zzz.fill"
+        case .normal: return "checkmark.circle.fill"
+        case .unknown: return "questionmark.circle.fill"
+        }
+    }
+
+    public var statusTitle: String {
+        switch powerMode {
+        case .noSleep: return "No Sleep Active"
+        case .normal: return "Normal Mode"
+        case .unknown: return "Status Unknown"
+        }
+    }
+
+    public var statusDescription: String {
+        switch powerMode {
+        case .noSleep: return "Your Mac will stay awake."
+        case .normal: return "Mac follows system sleep settings."
+        case .unknown: return "Refresh to check power status."
+        }
+    }
+
+    public var statusTint: PowerStatusTint {
+        switch powerMode {
+        case .noSleep: return .noSleep
+        case .normal: return .normal
+        case .unknown: return .unknown
+        }
+    }
+
+    public func startup() {
         guard !hasStarted else { return }
         hasStarted = true
-        guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else {
-            appendLog("Skipping startup side effects in test environment")
+
+        guard !isTestEnvironment else {
             return
         }
-        daemonStatus = client.daemonStatus
-        applyLaunchAtLoginPreference()
-        if settingsStore.settings.autoRegisterDaemonOnLaunch {
-            registerDaemonIfNeeded()
-        }
-        Task { await refreshStatus() }
-        restartRefreshLoop()
-    }
 
-    func restartRefreshLoop() {
-        refreshTask?.cancel()
-        let interval = max(60, settingsStore.settings.autoRefreshIntervalSeconds)
-        refreshTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(interval) * 1_000_000_000)
-                guard let self, !Task.isCancelled else { return }
-                guard self.shouldAutoRefresh else { continue }
-                await self.refreshStatus()
-            }
+        do {
+            try client.registerDaemonIfNeeded()
+        } catch {
+            lastError = safeErrorMessage(error)
+        }
+        
+        isHelperEnabled = client.isHelperEnabled()
+
+        Task { [weak self] in
+            await self?.refreshStatus()
         }
     }
 
-    func applySettings() {
-        applyLaunchAtLoginPreference()
-        restartRefreshLoop()
-    }
-
-    func refreshStatus() async {
+    public func refreshStatus() async {
         guard !isBusy else { return }
-        await perform("Refresh status") {
+        isBusy = true
+        defer { isBusy = false }
+        isHelperEnabled = client.isHelperEnabled()
+        do {
             let status = try await client.fetchStatus()
             guard !Task.isCancelled else { return }
             snapshot = status.snapshot
             statusSource = status.source
-            if let fallbackReason = status.fallbackReason, status.source == .localFallback {
-                appendLog("Using local fallback: \(fallbackReason)")
-            }
-            daemonStatus = client.daemonStatus
-            if startupSnapshot == nil {
-                startupSnapshot = status.snapshot
-            }
+            lastError = nil
+            checkBatterySafety()
+        } catch {
+            lastError = "Refresh status failed: \(safeErrorMessage(error))"
         }
     }
 
-    func toggleDisableSleep() {
-        clearTimedKeepAwake(shouldLog: false)
-        let target = !(snapshot.disableSleep ?? false)
-        enqueueOperation("Set disablesleep to \(target ? "1" : "0")") { [self] in
-            try await self.client.setDisableSleep(target)
-            let status = try await self.client.fetchStatus()
-            guard !Task.isCancelled else { return }
-            self.snapshot = status.snapshot
-            self.statusSource = status.source
-        }
-    }
-
-    func toggleLidWake() {
-        clearTimedKeepAwake(shouldLog: false)
-        let target = !(snapshot.lidWake ?? true)
-        enqueueOperation("Set lidwake to \(target ? "1" : "0")") { [self] in
-            try await self.client.setLidWake(target)
-            let status = try await self.client.fetchStatus()
-            guard !Task.isCancelled else { return }
-            self.snapshot = status.snapshot
-            self.statusSource = status.source
-        }
-    }
-
-    func applyPreset(_ preset: PowerPreset) {
-        clearTimedKeepAwake(shouldLog: false)
-        setSelectedPreset(preset)
-        enqueueOperation("Apply preset: \(preset.title)") { [self] in
-            try await self.client.applyPreset(preset)
-            let status = try await self.client.fetchStatus()
-            guard !Task.isCancelled else { return }
-            self.snapshot = status.snapshot
-            self.statusSource = status.source
-        }
-    }
-
-    func applySelectedPreset() {
-        applyPreset(selectedPreset)
-    }
-
-    func setSelectedPreset(_ preset: PowerPreset) {
-        settingsStore.update { $0.selectedPresetRawValue = preset.rawValue }
-    }
-
-    func restoreDefaults() {
-        clearTimedKeepAwake(shouldLog: false)
-        enqueueOperation("Restore defaults") { [self] in
-            try await self.client.restoreDefaults()
-            let status = try await self.client.fetchStatus()
-            guard !Task.isCancelled else { return }
-            self.snapshot = status.snapshot
-            self.statusSource = status.source
-        }
-    }
-
-    func startTimedKeepAwake(minutes: Int) {
-        guard minutes > 0 else { return }
-        clearTimedKeepAwake(shouldLog: false)
-        enqueueOperation("Enable keep awake for \(minutes) minutes") { [self] in
-            try await self.client.setDisableSleep(true)
-            self.scheduleTimedKeepAwakeRestore(minutes: minutes)
-            let status = try await self.client.fetchStatus()
-            guard !Task.isCancelled else { return }
-            self.snapshot = status.snapshot
-            self.statusSource = status.source
-        }
-    }
-
-    func startCustomTimedKeepAwake() {
-        startTimedKeepAwake(minutes: customTimedKeepAwakeMinutes)
-    }
-
-    func setCustomTimedKeepAwakeMinutes(_ value: Int) {
-        settingsStore.update { $0.customTimedKeepAwakeMinutes = min(max(value, 5), 720) }
-    }
-
-    func cancelTimedKeepAwake() {
-        clearTimedKeepAwake(shouldLog: true)
-    }
-
-    func registerDaemonIfNeeded() {
+    public func toggleHelper() {
+        let target = !isHelperEnabled
         do {
-            let before = client.daemonStatus
-            try client.registerDaemon()
-            daemonStatus = client.daemonStatus
-            if before != daemonStatus {
-                appendLog("Helper status changed to \(daemonStatusText())")
-            } else {
-                appendLog("Helper status unchanged: \(daemonStatusText())")
+            try client.setHelperEnabled(target)
+            isHelperEnabled = client.isHelperEnabled()
+            lastError = nil
+            
+            Task { [weak self] in
+                await self?.refreshStatus()
             }
         } catch {
-            daemonStatus = client.daemonStatus
-            lastError = error.localizedDescription
-            appendLog("Daemon registration failed: \(error.localizedDescription)")
+            lastError = "Failed to \(target ? "enable" : "disable") helper: \(safeErrorMessage(error))"
+            isHelperEnabled = client.isHelperEnabled()
         }
     }
 
-    func unregisterDaemon() {
-        do {
-            let before = client.daemonStatus
-            try client.unregisterDaemon()
-            daemonStatus = client.daemonStatus
-            if before != daemonStatus {
-                appendLog("Helper status changed to \(daemonStatusText())")
-            } else {
-                appendLog("Helper status unchanged: \(daemonStatusText())")
-            }
-        } catch {
-            daemonStatus = client.daemonStatus
-            lastError = error.localizedDescription
-            appendLog("Daemon unregister failed: \(error.localizedDescription)")
-        }
+    public func toggleDisableSleep() {
+        setDisableSleep(!(snapshot.disableSleep ?? false))
     }
 
-    func openLoginItemsSettings() {
-        client.openLoginItemsSettings()
-    }
+    public func startTimer(minutes: Int) {
+        cancelTimer()
+        selectedDurationMinutes = minutes
+        remainingSeconds = minutes * 60
 
-    func daemonStatusText() -> String {
-        switch daemonStatus {
-        case .enabled:
-            "Enabled"
-        case .requiresApproval:
-            "Requires Approval"
-        case .notRegistered:
-            "Not Registered"
-        case .notFound:
-            "Not Found"
-        @unknown default:
-            "Unknown"
-        }
-    }
-
-    func statusSourceText() -> String {
-        switch statusSource {
-        case .helper:
-            "Privileged Helper"
-        case .localFallback:
-            "Local Read-Only"
-        }
-    }
-
-    func requestQuit() {
-        guard settingsStore.settings.promptOnQuitIfChanged,
-              stateChangedSinceStartup()
-        else {
-            flushAndTerminate()
-            return
+        // Ensure No Sleep is ON
+        if snapshot.disableSleep != true {
+            setDisableSleep(true)
         }
 
-        switch presentQuitPrompt() {
-        case .keepAndQuit:
-            flushAndTerminate()
-        case .restoreDefaultsAndQuit:
-            enqueueMutation { [weak self] in
-                guard let self else { return }
-                let restored = await self.perform("Restore defaults before quit") {
-                    try await self.client.restoreDefaults()
-                }
-                guard restored else {
-                    self.appendLog("Quit cancelled: failed to restore defaults")
+        timerTask = Task { @MainActor [weak self] in
+            while let self, let seconds = self.remainingSeconds, seconds > 0 {
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
                     return
                 }
-                self.flushAndTerminate()
+                if Task.isCancelled { return }
+                self.remainingSeconds = seconds - 1
             }
-        case .cancel:
-            return
+            guard let self, !Task.isCancelled else { return }
+            self.finishTimerIfNeeded()
         }
     }
 
-    func copyTerminalCommand(_ item: TerminalCommand) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        if pasteboard.setString(item.command, forType: .string) {
-            appendLog("Copied command: \(item.command)")
-            return
-        }
-        lastError = "Failed to copy command to clipboard"
-        appendLog("Failed to copy command: \(item.command)")
+    public func cancelTimer() {
+        timerTask?.cancel()
+        timerTask = nil
+        remainingSeconds = nil
     }
 
-    private func applyLaunchAtLoginPreference() {
-        do {
-            try client.setLaunchAtLogin(enabled: settingsStore.settings.launchAtLogin)
-        } catch {
-            lastError = error.localizedDescription
-            appendLog("Launch at login update failed: \(error.localizedDescription)")
+    public func restoreDefaults() {
+        cancelTimer()
+        enqueueOperation("Restore defaults") { viewModel in
+            try await viewModel.client.restoreDefaults()
+            try await viewModel.refreshSnapshotFromClient()
         }
     }
 
-    private func appendLog(_ message: String) {
-        logEntries.insert(LogEntry(date: Date(), message: message), at: 0)
-        if logEntries.count > Self.maxLogEntries {
-            logEntries.removeSubrange(Self.maxLogEntries...)
+    public var sourceText: String {
+        switch statusSource {
+        case .helper:
+            return "Privileged helper"
+        case .localFallback:
+            return "Local pmset read"
         }
     }
 
-    private func enqueueOperation(_ label: String, operation: @escaping () async throws -> Void) {
+    // MARK: - Internal
+
+    private func setupBatteryMonitoring() {
+        batteryMonitorTask?.cancel()
+        batteryMonitorTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                await self.updateBatteryLevel()
+                do {
+                    try await Task.sleep(for: .seconds(60))
+                } catch {
+                    return
+                }
+            }
+        }
+    }
+
+    private func updateBatteryLevel() async {
+        let output = await Task.detached(priority: .utility) {
+            TimedProcessRunner(executableURL: URL(fileURLWithPath: "/usr/bin/pmset"), timeoutSeconds: 5)
+                .run(arguments: ["-g", "batt"]).output
+        }.value
+        
+        if let range = output.range(of: #"\d+%"#, options: .regularExpression) {
+            let percentage = String(output[range]).replacingOccurrences(of: "%", with: "")
+            if let level = Int(percentage) {
+                batteryLevel = level
+                checkBatterySafety()
+            }
+        }
+    }
+
+    private func checkBatterySafety() {
+        if isLowBatteryProtectionEnabled && batteryLevel <= 20 && snapshot.disableSleep == true {
+            lastError = "Low battery (≤20%). Disabling 'No Sleep' to save power."
+            setDisableSleep(false)
+        }
+    }
+
+    private func finishTimerIfNeeded() {
+        let shouldDisableNoSleep = snapshot.disableSleep == true
+        remainingSeconds = nil
+        guard shouldDisableNoSleep else { return }
+        setDisableSleep(false)
+    }
+
+    private func setDisableSleep(_ enabled: Bool) {
+        if !enabled {
+            cancelTimer()
+        }
+        enqueueOperation("Set disablesleep to \(enabled ? "1" : "0")") { viewModel in
+            try await viewModel.client.setDisableSleep(enabled)
+            try await viewModel.refreshSnapshotFromClient()
+        }
+    }
+
+    private func refreshSnapshotFromClient() async throws {
+        let status = try await client.fetchStatus()
+        guard !Task.isCancelled else { return }
+        snapshot = status.snapshot
+        statusSource = status.source
+    }
+
+    private func enqueueOperation(_ label: String, operation: @escaping (AppViewModel) async throws -> Void) {
         enqueueMutation { [weak self] in
             guard let self else { return }
-            _ = await self.perform(label, operation: operation)
+            _ = await self.perform(label) {
+                try await operation(self)
+            }
         }
     }
 
@@ -376,56 +292,6 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    private func scheduleTimedKeepAwakeRestore(minutes: Int) {
-        timedKeepAwakeTask?.cancel()
-        let endDate = Date().addingTimeInterval(TimeInterval(minutes * 60))
-        timedKeepAwakeEndDate = endDate
-        timedKeepAwakeTask = Task { [weak self] in
-            let nanoseconds = UInt64(max(0, endDate.timeIntervalSinceNow) * 1_000_000_000)
-            do {
-                try await Task.sleep(nanoseconds: nanoseconds)
-            } catch {
-                return
-            }
-            guard !Task.isCancelled else { return }
-            await self?.restoreDefaultsAfterTimedKeepAwake()
-        }
-    }
-
-    private func restoreDefaultsAfterTimedKeepAwake() async {
-        timedKeepAwakeTask = nil
-        timedKeepAwakeEndDate = nil
-        enqueueOperation("Timed keep awake ended; restoring defaults") { [self] in
-            try await self.client.restoreDefaults()
-            let status = try await self.client.fetchStatus()
-            guard !Task.isCancelled else { return }
-            self.snapshot = status.snapshot
-            self.statusSource = status.source
-        }
-    }
-
-    private func clearTimedKeepAwake(shouldLog: Bool) {
-        let hadTimer = timedKeepAwakeEndDate != nil
-        timedKeepAwakeTask?.cancel()
-        timedKeepAwakeTask = nil
-        timedKeepAwakeEndDate = nil
-        if shouldLog, hadTimer {
-            appendLog("Cancelled timed keep awake")
-        }
-    }
-
-    private func stateChangedSinceStartup() -> Bool {
-        guard let startupSnapshot else { return false }
-        return startupSnapshot.disableSleep != snapshot.disableSleep || startupSnapshot.lidWake != snapshot.lidWake
-    }
-
-    private var shouldAutoRefresh: Bool {
-        if NSApp.isActive {
-            return true
-        }
-        return NSApp.windows.contains { $0.isVisible && !$0.isMiniaturized }
-    }
-
     @discardableResult
     private func perform(_ label: String, operation: () async throws -> Void) async -> Bool {
         isBusy = true
@@ -433,36 +299,21 @@ final class AppViewModel: ObservableObject {
         do {
             try await operation()
             lastError = nil
-            appendLog(label)
-            daemonStatus = client.daemonStatus
             return true
         } catch {
-            lastError = error.localizedDescription
-            appendLog("\(label) failed: \(error.localizedDescription)")
-            daemonStatus = client.daemonStatus
+            lastError = "\(label) failed: \(safeErrorMessage(error))"
             return false
         }
     }
 
-    private static func defaultQuitPromptChoice() -> QuitPromptChoice {
-        let alert = NSAlert()
-        alert.messageText = "Keep power changes?"
-        alert.informativeText = "Your current pmset state differs from when ControlPower started."
-        alert.addButton(withTitle: "Keep and Quit")
-        alert.addButton(withTitle: "Restore Defaults and Quit")
-        alert.addButton(withTitle: "Cancel")
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            return .keepAndQuit
-        case .alertSecondButtonReturn:
-            return .restoreDefaultsAndQuit
-        default:
-            return .cancel
+    private func safeErrorMessage(_ error: Error) -> String {
+        let sanitized = error.localizedDescription
+            .replacingOccurrences(of: "\r", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sanitized.isEmpty else {
+            return "Unknown error"
         }
-    }
-
-    private func flushAndTerminate() {
-        settingsStore.flush()
-        terminateApp()
+        return String(sanitized.prefix(200))
     }
 }

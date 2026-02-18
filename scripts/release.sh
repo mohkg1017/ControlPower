@@ -97,6 +97,8 @@ else
   echo "warning: exportArchive failed; falling back to archived app"
 fi
 
+bash "$ROOT_DIR/scripts/check-release-entitlements.sh" "$APP_PATH"
+
 DSYM_PATH="$ARCHIVE_PATH/dSYMs/$APP_NAME.app.dSYM"
 if [[ -d "$DSYM_PATH" ]]; then
   rm -rf "$ARCHIVES/$APP_NAME.app.dSYM"

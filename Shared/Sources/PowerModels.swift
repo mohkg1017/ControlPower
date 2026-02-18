@@ -1,39 +1,10 @@
 import Foundation
+import Security
 
 public enum PowerHelperConstants {
     public static let daemonPlistName = "com.moe.controlpower.helper.plist"
     public static let daemonLabel = "com.moe.controlpower.helper"
     public static let machServiceName = "com.moe.controlpower.helper.mach"
-}
-
-public enum PowerPreset: Int, CaseIterable, Identifiable, Sendable {
-    case keepAwake = 1
-    case deskMode = 2
-    case appleDefaults = 3
-
-    public var id: Int { rawValue }
-
-    public var title: String {
-        switch self {
-        case .keepAwake:
-            "Keep Awake"
-        case .deskMode:
-            "Desk Mode"
-        case .appleDefaults:
-            "Apple Defaults"
-        }
-    }
-
-    public var detail: String {
-        switch self {
-        case .keepAwake:
-            "disablesleep=1, lidwake=0"
-        case .deskMode:
-            "disablesleep=1, lidwake=1"
-        case .appleDefaults:
-            "disablesleep=0, lidwake=1"
-        }
-    }
 }
 
 public struct PMSetSnapshot: Equatable, Sendable {
@@ -66,6 +37,39 @@ public enum PMSetParser {
                 if parts[1] == "0" { return false }
             }
         }
+        return nil
+    }
+}
+
+enum SystemExecutableValidator {
+    static func validateExecutable(at url: URL) -> String? {
+        do {
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isExecutableKey, .isSymbolicLinkKey])
+            guard values.isRegularFile == true else {
+                return "pmset executable is not a regular file"
+            }
+            guard values.isExecutable == true else {
+                return "pmset executable is not marked executable"
+            }
+            guard values.isSymbolicLink != true else {
+                return "pmset executable must not be a symlink"
+            }
+        } catch {
+            return "Failed to read pmset file attributes: \(error.localizedDescription)"
+        }
+
+        var staticCode: SecStaticCode?
+        let createStatus = SecStaticCodeCreateWithPath(url as CFURL, SecCSFlags(), &staticCode)
+        guard createStatus == errSecSuccess, let staticCode else {
+            return "Failed to load pmset code signature (\(createStatus))"
+        }
+
+        let validateStatus = SecStaticCodeCheckValidity(staticCode, SecCSFlags(), nil)
+        guard validateStatus == errSecSuccess else {
+            let message = (SecCopyErrorMessageString(validateStatus, nil) as String?) ?? "unknown signature error"
+            return "pmset signature validation failed: \(message)"
+        }
+
         return nil
     }
 }
