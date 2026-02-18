@@ -151,16 +151,144 @@ final class ControlPowerTests: XCTestCase {
         let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
         let client = FakePowerDaemonClient()
         client.daemonStatus = .enabled
-        client.fetchDelayNanoseconds = 300_000_000
+        client.holdFetchStatus = true
 
         let viewModel = AppViewModel(settingsStore: store, client: client)
 
         async let firstRefresh: Void = viewModel.refreshStatus()
-        try? await Task.sleep(nanoseconds: 30_000_000)
+        await client.waitForFetchStatusCallCount(1)
         await viewModel.refreshStatus()
+        client.resumeHeldFetchStatus()
         await firstRefresh
 
         XCTAssertEqual(client.fetchStatusCallCount, 1)
+    }
+
+    @MainActor
+    func testViewModelRefreshLogsFallbackReason() async {
+        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
+        let client = FakePowerDaemonClient()
+        client.daemonStatus = .notRegistered
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "fallback"),
+                source: .localFallback,
+                fallbackReason: "Helper status is Not Registered"
+            )
+        )
+
+        let viewModel = AppViewModel(settingsStore: store, client: client)
+        await viewModel.refreshStatus()
+
+        XCTAssertTrue(viewModel.logEntries.contains { $0.message.contains("Using local fallback: Helper status is Not Registered") })
+    }
+
+    @MainActor
+    func testViewModelMutationsRunSequentially() async {
+        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
+        let client = FakePowerDaemonClient()
+        client.daemonStatus = .enabled
+
+        let viewModel = AppViewModel(settingsStore: store, client: client)
+        viewModel.toggleDisableSleep()
+        viewModel.toggleLidWake()
+
+        await client.waitForMutationCallCount(2)
+        await client.waitForIdleMutations()
+
+        XCTAssertEqual(client.setDisableSleepCallCount, 1)
+        XCTAssertEqual(client.setLidWakeCallCount, 1)
+        XCTAssertEqual(client.maxConcurrentMutationCalls, 1)
+    }
+
+    @MainActor
+    func testRequestQuitRestoreFailureDoesNotTerminate() async {
+        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
+        let client = FakePowerDaemonClient()
+        client.daemonStatus = .enabled
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "initial"),
+                source: .helper
+            )
+        )
+        client.restoreDefaultsResult = .failure(NSError(domain: "Test", code: 1, userInfo: [NSLocalizedDescriptionKey: "restore failed"]))
+
+        var terminateCount = 0
+        let viewModel = AppViewModel(
+            settingsStore: store,
+            client: client,
+            presentQuitPrompt: { .restoreDefaultsAndQuit },
+            terminateApp: { terminateCount += 1 }
+        )
+
+        await viewModel.refreshStatus()
+        viewModel.snapshot = PMSetSnapshot(disableSleep: true, lidWake: false, summary: "changed")
+        viewModel.requestQuit()
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+
+        XCTAssertEqual(terminateCount, 0)
+        XCTAssertEqual(client.restoreDefaultsCallCount, 1)
+        XCTAssertEqual(viewModel.lastError, "restore failed")
+    }
+
+    @MainActor
+    func testRequestQuitRestoreSuccessTerminates() async {
+        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
+        let client = FakePowerDaemonClient()
+        client.daemonStatus = .enabled
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "initial"),
+                source: .helper
+            )
+        )
+
+        var terminateCount = 0
+        let viewModel = AppViewModel(
+            settingsStore: store,
+            client: client,
+            presentQuitPrompt: { .restoreDefaultsAndQuit },
+            terminateApp: { terminateCount += 1 }
+        )
+
+        await viewModel.refreshStatus()
+        viewModel.snapshot = PMSetSnapshot(disableSleep: true, lidWake: false, summary: "changed")
+        viewModel.requestQuit()
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+
+        XCTAssertEqual(terminateCount, 1)
+        XCTAssertEqual(client.restoreDefaultsCallCount, 1)
+    }
+
+    @MainActor
+    func testRequestQuitKeepAndQuitSkipsRestore() async {
+        let store = SettingsStore(settingsURL: makeTemporarySettingsURL(testName: #function))
+        let client = FakePowerDaemonClient()
+        client.daemonStatus = .enabled
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "initial"),
+                source: .helper
+            )
+        )
+
+        var terminateCount = 0
+        let viewModel = AppViewModel(
+            settingsStore: store,
+            client: client,
+            presentQuitPrompt: { .keepAndQuit },
+            terminateApp: { terminateCount += 1 }
+        )
+
+        await viewModel.refreshStatus()
+        viewModel.snapshot = PMSetSnapshot(disableSleep: true, lidWake: false, summary: "changed")
+        viewModel.requestQuit()
+
+        XCTAssertEqual(terminateCount, 1)
+        XCTAssertEqual(client.restoreDefaultsCallCount, 0)
     }
 
     func testPMSetParserReadsValues() {
@@ -200,6 +328,21 @@ final class ControlPowerTests: XCTestCase {
         XCTAssertFalse(snapshot.summary.hasSuffix("\n"))
     }
 
+    func testTimedProcessRunnerReturnsOutputForSuccess() {
+        let runner = TimedProcessRunner(executableURL: URL(fileURLWithPath: "/bin/echo"), timeoutSeconds: 1)
+        let result = runner.run(arguments: ["hello"])
+        XCTAssertTrue(result.success)
+        XCTAssertFalse(result.timedOut)
+        XCTAssertEqual(result.output, "hello")
+    }
+
+    func testTimedProcessRunnerTimesOutProcess() {
+        let runner = TimedProcessRunner(executableURL: URL(fileURLWithPath: "/bin/sleep"), timeoutSeconds: 0.2)
+        let result = runner.run(arguments: ["2"])
+        XCTAssertFalse(result.success)
+        XCTAssertTrue(result.timedOut)
+    }
+
     private func makeTemporarySettingsURL(testName: String) -> URL {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("ControlPowerTests", isDirectory: true)
@@ -219,8 +362,19 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol {
             source: .localFallback
         )
     )
-    var fetchDelayNanoseconds: UInt64 = 0
+    var holdFetchStatus = false
+    var restoreDefaultsResult: Result<Void, Error> = .success(())
     private(set) var fetchStatusCallCount = 0
+    private(set) var setDisableSleepCallCount = 0
+    private(set) var setLidWakeCallCount = 0
+    private(set) var restoreDefaultsCallCount = 0
+    private(set) var applyPresetCallCount = 0
+    private(set) var maxConcurrentMutationCalls = 0
+    private var activeMutationCalls = 0
+    private var fetchStatusCountWait: (expected: Int, continuation: CheckedContinuation<Void, Never>)?
+    private var mutationCountWait: (expected: Int, continuation: CheckedContinuation<Void, Never>)?
+    private var idleMutationWait: CheckedContinuation<Void, Never>?
+    private var heldFetchStatusContinuation: CheckedContinuation<Void, Never>?
 
     func registerDaemon() throws {}
 
@@ -230,19 +384,94 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol {
 
     func setLaunchAtLogin(enabled: Bool) throws {}
 
+    func waitForFetchStatusCallCount(_ expected: Int) async {
+        guard fetchStatusCallCount < expected else { return }
+        await withCheckedContinuation { continuation in
+            fetchStatusCountWait = (expected, continuation)
+        }
+    }
+
+    func waitForMutationCallCount(_ expected: Int) async {
+        guard totalMutationCallCount < expected else { return }
+        await withCheckedContinuation { continuation in
+            mutationCountWait = (expected, continuation)
+        }
+    }
+
+    func waitForIdleMutations() async {
+        guard activeMutationCalls > 0 else { return }
+        await withCheckedContinuation { continuation in
+            idleMutationWait = continuation
+        }
+    }
+
+    func resumeHeldFetchStatus() {
+        heldFetchStatusContinuation?.resume()
+        heldFetchStatusContinuation = nil
+    }
+
     func fetchStatus() async throws -> PowerHelperStatus {
         fetchStatusCallCount += 1
-        if fetchDelayNanoseconds > 0 {
-            try? await Task.sleep(nanoseconds: fetchDelayNanoseconds)
+        resolveFetchStatusCountWaitIfNeeded()
+        if holdFetchStatus {
+            await withCheckedContinuation { continuation in
+                heldFetchStatusContinuation = continuation
+            }
         }
         return try fetchStatusResult.get()
     }
 
-    func setDisableSleep(_ enabled: Bool) async throws {}
+    func setDisableSleep(_ enabled: Bool) async throws {
+        setDisableSleepCallCount += 1
+        resolveMutationCountWaitIfNeeded()
+        await withMutationTracking()
+    }
 
-    func setLidWake(_ enabled: Bool) async throws {}
+    func setLidWake(_ enabled: Bool) async throws {
+        setLidWakeCallCount += 1
+        resolveMutationCountWaitIfNeeded()
+        await withMutationTracking()
+    }
 
-    func restoreDefaults() async throws {}
+    func restoreDefaults() async throws {
+        restoreDefaultsCallCount += 1
+        resolveMutationCountWaitIfNeeded()
+        await withMutationTracking()
+        try restoreDefaultsResult.get()
+    }
 
-    func applyPreset(_ preset: PowerPreset) async throws {}
+    func applyPreset(_ preset: PowerPreset) async throws {
+        applyPresetCallCount += 1
+        resolveMutationCountWaitIfNeeded()
+        await withMutationTracking()
+    }
+
+    private func withMutationTracking() async {
+        activeMutationCalls += 1
+        if activeMutationCalls > maxConcurrentMutationCalls {
+            maxConcurrentMutationCalls = activeMutationCalls
+        }
+        await Task.yield()
+        activeMutationCalls -= 1
+        if activeMutationCalls == 0 {
+            idleMutationWait?.resume()
+            idleMutationWait = nil
+        }
+    }
+
+    private var totalMutationCallCount: Int {
+        setDisableSleepCallCount + setLidWakeCallCount + restoreDefaultsCallCount + applyPresetCallCount
+    }
+
+    private func resolveFetchStatusCountWaitIfNeeded() {
+        guard let wait = fetchStatusCountWait, fetchStatusCallCount >= wait.expected else { return }
+        fetchStatusCountWait = nil
+        wait.continuation.resume()
+    }
+
+    private func resolveMutationCountWaitIfNeeded() {
+        guard let wait = mutationCountWait, totalMutationCallCount >= wait.expected else { return }
+        mutationCountWait = nil
+        wait.continuation.resume()
+    }
 }

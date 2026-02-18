@@ -11,6 +11,13 @@ enum PowerStatusSource: Sendable, Equatable {
 struct PowerHelperStatus: Sendable {
     var snapshot: PMSetSnapshot
     var source: PowerStatusSource
+    var fallbackReason: String?
+
+    init(snapshot: PMSetSnapshot, source: PowerStatusSource, fallbackReason: String? = nil) {
+        self.snapshot = snapshot
+        self.source = source
+        self.fallbackReason = fallbackReason
+    }
 }
 
 @MainActor
@@ -94,7 +101,11 @@ final class PowerDaemonClient: PowerDaemonClientProtocol {
             let snapshot = try await Task.detached(priority: .userInitiated) {
                 try Self.fetchLocalPMSetSnapshot()
             }.value
-            return PowerHelperStatus(snapshot: snapshot, source: .localFallback)
+            return PowerHelperStatus(
+                snapshot: snapshot,
+                source: .localFallback,
+                fallbackReason: "Helper status is \(daemonStatusDescription(daemonStatus))"
+            )
         }
 
         do {
@@ -103,7 +114,11 @@ final class PowerDaemonClient: PowerDaemonClientProtocol {
             let snapshot = try await Task.detached(priority: .userInitiated) {
                 try Self.fetchLocalPMSetSnapshot()
             }.value
-            return PowerHelperStatus(snapshot: snapshot, source: .localFallback)
+            return PowerHelperStatus(
+                snapshot: snapshot,
+                source: .localFallback,
+                fallbackReason: error.localizedDescription
+            )
         }
     }
 
@@ -121,6 +136,21 @@ final class PowerDaemonClient: PowerDaemonClientProtocol {
                 )
                 done(PowerHelperStatus(snapshot: snapshot, source: .helper), nil)
             }
+        }
+    }
+
+    private func daemonStatusDescription(_ status: SMAppService.Status) -> String {
+        switch status {
+        case .enabled:
+            return "Enabled"
+        case .requiresApproval:
+            return "Requires Approval"
+        case .notRegistered:
+            return "Not Registered"
+        case .notFound:
+            return "Not Found"
+        @unknown default:
+            return "Unknown"
         }
     }
 

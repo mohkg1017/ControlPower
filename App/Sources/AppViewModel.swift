@@ -15,6 +15,12 @@ struct TerminalCommand: Identifiable {
     let detail: String
 }
 
+enum QuitPromptChoice {
+    case keepAndQuit
+    case restoreDefaultsAndQuit
+    case cancel
+}
+
 @MainActor
 final class AppViewModel: ObservableObject {
     @Published var snapshot = PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "No status yet")
@@ -30,7 +36,11 @@ final class AppViewModel: ObservableObject {
     private var refreshTask: Task<Void, Never>?
     private var startupSnapshot: PMSetSnapshot?
     private var timedKeepAwakeTask: Task<Void, Never>?
+    private var pendingMutations: [() async -> Void] = []
+    private var isProcessingMutations = false
     private var hasStarted = false
+    private let presentQuitPrompt: @MainActor () -> QuitPromptChoice
+    private let terminateApp: @MainActor () -> Void
     private static let maxLogEntries = 300
 
     var helperReadyForCommands: Bool {
@@ -86,10 +96,14 @@ final class AppViewModel: ObservableObject {
 
     init(
         settingsStore: SettingsStore,
-        client: any PowerDaemonClientProtocol = PowerDaemonClient()
+        client: any PowerDaemonClientProtocol = PowerDaemonClient(),
+        presentQuitPrompt: @escaping @MainActor () -> QuitPromptChoice = { AppViewModel.defaultQuitPromptChoice() },
+        terminateApp: @escaping @MainActor () -> Void = { NSApp.terminate(nil) }
     ) {
         self.settingsStore = settingsStore
         self.client = client
+        self.presentQuitPrompt = presentQuitPrompt
+        self.terminateApp = terminateApp
     }
 
     func startup() {
@@ -133,6 +147,9 @@ final class AppViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
             snapshot = status.snapshot
             statusSource = status.source
+            if let fallbackReason = status.fallbackReason, status.source == .localFallback {
+                appendLog("Using local fallback: \(fallbackReason)")
+            }
             daemonStatus = client.daemonStatus
             if startupSnapshot == nil {
                 startupSnapshot = status.snapshot
@@ -143,42 +160,36 @@ final class AppViewModel: ObservableObject {
     func toggleDisableSleep() {
         clearTimedKeepAwake(shouldLog: false)
         let target = !(snapshot.disableSleep ?? false)
-        Task {
-            await perform("Set disablesleep to \(target ? "1" : "0")") {
-                try await client.setDisableSleep(target)
-                let status = try await client.fetchStatus()
-                guard !Task.isCancelled else { return }
-                snapshot = status.snapshot
-                statusSource = status.source
-            }
+        enqueueOperation("Set disablesleep to \(target ? "1" : "0")") { [self] in
+            try await self.client.setDisableSleep(target)
+            let status = try await self.client.fetchStatus()
+            guard !Task.isCancelled else { return }
+            self.snapshot = status.snapshot
+            self.statusSource = status.source
         }
     }
 
     func toggleLidWake() {
         clearTimedKeepAwake(shouldLog: false)
         let target = !(snapshot.lidWake ?? true)
-        Task {
-            await perform("Set lidwake to \(target ? "1" : "0")") {
-                try await client.setLidWake(target)
-                let status = try await client.fetchStatus()
-                guard !Task.isCancelled else { return }
-                snapshot = status.snapshot
-                statusSource = status.source
-            }
+        enqueueOperation("Set lidwake to \(target ? "1" : "0")") { [self] in
+            try await self.client.setLidWake(target)
+            let status = try await self.client.fetchStatus()
+            guard !Task.isCancelled else { return }
+            self.snapshot = status.snapshot
+            self.statusSource = status.source
         }
     }
 
     func applyPreset(_ preset: PowerPreset) {
         clearTimedKeepAwake(shouldLog: false)
         setSelectedPreset(preset)
-        Task {
-            await perform("Apply preset: \(preset.title)") {
-                try await client.applyPreset(preset)
-                let status = try await client.fetchStatus()
-                guard !Task.isCancelled else { return }
-                snapshot = status.snapshot
-                statusSource = status.source
-            }
+        enqueueOperation("Apply preset: \(preset.title)") { [self] in
+            try await self.client.applyPreset(preset)
+            let status = try await self.client.fetchStatus()
+            guard !Task.isCancelled else { return }
+            self.snapshot = status.snapshot
+            self.statusSource = status.source
         }
     }
 
@@ -192,29 +203,25 @@ final class AppViewModel: ObservableObject {
 
     func restoreDefaults() {
         clearTimedKeepAwake(shouldLog: false)
-        Task {
-            await perform("Restore defaults") {
-                try await client.restoreDefaults()
-                let status = try await client.fetchStatus()
-                guard !Task.isCancelled else { return }
-                snapshot = status.snapshot
-                statusSource = status.source
-            }
+        enqueueOperation("Restore defaults") { [self] in
+            try await self.client.restoreDefaults()
+            let status = try await self.client.fetchStatus()
+            guard !Task.isCancelled else { return }
+            self.snapshot = status.snapshot
+            self.statusSource = status.source
         }
     }
 
     func startTimedKeepAwake(minutes: Int) {
         guard minutes > 0 else { return }
         clearTimedKeepAwake(shouldLog: false)
-        Task {
-            await perform("Enable keep awake for \(minutes) minutes") {
-                try await client.setDisableSleep(true)
-                let status = try await client.fetchStatus()
-                guard !Task.isCancelled else { return }
-                snapshot = status.snapshot
-                statusSource = status.source
-                scheduleTimedKeepAwakeRestore(minutes: minutes)
-            }
+        enqueueOperation("Enable keep awake for \(minutes) minutes") { [self] in
+            try await self.client.setDisableSleep(true)
+            let status = try await self.client.fetchStatus()
+            guard !Task.isCancelled else { return }
+            self.snapshot = status.snapshot
+            self.statusSource = status.source
+            self.scheduleTimedKeepAwakeRestore(minutes: minutes)
         }
     }
 
@@ -295,31 +302,26 @@ final class AppViewModel: ObservableObject {
         guard settingsStore.settings.promptOnQuitIfChanged,
               stateChangedSinceStartup()
         else {
-            settingsStore.flush()
-            NSApp.terminate(nil)
+            flushAndTerminate()
             return
         }
 
-        let alert = NSAlert()
-        alert.messageText = "Keep power changes?"
-        alert.informativeText = "Your current pmset state differs from when ControlPower started."
-        alert.addButton(withTitle: "Keep and Quit")
-        alert.addButton(withTitle: "Restore Defaults and Quit")
-        alert.addButton(withTitle: "Cancel")
-
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            settingsStore.flush()
-            NSApp.terminate(nil)
-        case .alertSecondButtonReturn:
-            Task {
-                await perform("Restore defaults before quit") {
-                    try await client.restoreDefaults()
+        switch presentQuitPrompt() {
+        case .keepAndQuit:
+            flushAndTerminate()
+        case .restoreDefaultsAndQuit:
+            enqueueMutation { [weak self] in
+                guard let self else { return }
+                let restored = await self.perform("Restore defaults before quit") {
+                    try await self.client.restoreDefaults()
                 }
-                settingsStore.flush()
-                NSApp.terminate(nil)
+                guard restored else {
+                    self.appendLog("Quit cancelled: failed to restore defaults")
+                    return
+                }
+                self.flushAndTerminate()
             }
-        default:
+        case .cancel:
             return
         }
     }
@@ -351,6 +353,28 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    private func enqueueOperation(_ label: String, operation: @escaping () async throws -> Void) {
+        enqueueMutation { [weak self] in
+            guard let self else { return }
+            _ = await self.perform(label, operation: operation)
+        }
+    }
+
+    private func enqueueMutation(_ mutation: @escaping () async -> Void) {
+        pendingMutations.append(mutation)
+        guard !isProcessingMutations else { return }
+        isProcessingMutations = true
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            while !self.pendingMutations.isEmpty {
+                let next = self.pendingMutations.removeFirst()
+                await next()
+            }
+            self.isProcessingMutations = false
+        }
+    }
+
     private func scheduleTimedKeepAwakeRestore(minutes: Int) {
         timedKeepAwakeTask?.cancel()
         let endDate = Date().addingTimeInterval(TimeInterval(minutes * 60))
@@ -368,15 +392,15 @@ final class AppViewModel: ObservableObject {
     }
 
     private func restoreDefaultsAfterTimedKeepAwake() async {
-        await perform("Timed keep awake ended; restoring defaults") {
-            try await client.restoreDefaults()
-            let status = try await client.fetchStatus()
-            guard !Task.isCancelled else { return }
-            snapshot = status.snapshot
-            statusSource = status.source
-        }
         timedKeepAwakeTask = nil
         timedKeepAwakeEndDate = nil
+        enqueueOperation("Timed keep awake ended; restoring defaults") { [self] in
+            try await self.client.restoreDefaults()
+            let status = try await self.client.fetchStatus()
+            guard !Task.isCancelled else { return }
+            self.snapshot = status.snapshot
+            self.statusSource = status.source
+        }
     }
 
     private func clearTimedKeepAwake(shouldLog: Bool) {
@@ -401,7 +425,8 @@ final class AppViewModel: ObservableObject {
         return NSApp.windows.contains { $0.isVisible && !$0.isMiniaturized }
     }
 
-    private func perform(_ label: String, operation: () async throws -> Void) async {
+    @discardableResult
+    private func perform(_ label: String, operation: () async throws -> Void) async -> Bool {
         isBusy = true
         defer { isBusy = false }
         do {
@@ -409,10 +434,34 @@ final class AppViewModel: ObservableObject {
             lastError = nil
             appendLog(label)
             daemonStatus = client.daemonStatus
+            return true
         } catch {
             lastError = error.localizedDescription
             appendLog("\(label) failed: \(error.localizedDescription)")
             daemonStatus = client.daemonStatus
+            return false
         }
+    }
+
+    private static func defaultQuitPromptChoice() -> QuitPromptChoice {
+        let alert = NSAlert()
+        alert.messageText = "Keep power changes?"
+        alert.informativeText = "Your current pmset state differs from when ControlPower started."
+        alert.addButton(withTitle: "Keep and Quit")
+        alert.addButton(withTitle: "Restore Defaults and Quit")
+        alert.addButton(withTitle: "Cancel")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .keepAndQuit
+        case .alertSecondButtonReturn:
+            return .restoreDefaultsAndQuit
+        default:
+            return .cancel
+        }
+    }
+
+    private func flushAndTerminate() {
+        settingsStore.flush()
+        terminateApp()
     }
 }

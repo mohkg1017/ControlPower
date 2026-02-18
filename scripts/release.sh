@@ -12,7 +12,7 @@ APP_NAME="ControlPower"
 
 VERSION="${1:-1.0.0}"
 BUILD="${2:-1}"
-TEST_CONFIGURATION="${TEST_CONFIGURATION:-Release}"
+TEST_CONFIGURATION="${TEST_CONFIGURATION:-Debug}"
 
 if [[ -f "$ROOT_DIR/project.yml" ]]; then
   if command -v xcodegen >/dev/null 2>&1; then

@@ -2,6 +2,7 @@ import Foundation
 
 final class HelperService: NSObject, PowerHelperXPCProtocol {
     private let pmsetURL = URL(fileURLWithPath: "/usr/bin/pmset")
+    private let pmsetTimeoutSeconds: TimeInterval = 8
 
     func ping(_ reply: @escaping (String) -> Void) {
         reply("pong")
@@ -71,22 +72,11 @@ final class HelperService: NSObject, PowerHelperXPCProtocol {
     }
 
     private func runPMSet(arguments: [String]) -> (success: Bool, output: String) {
-        let process = Process()
-        process.executableURL = pmsetURL
-        process.arguments = arguments
-
-        let outputPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = outputPipe
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-            let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return (process.terminationStatus == 0, output)
-        } catch {
-            return (false, error.localizedDescription)
+        let runner = TimedProcessRunner(executableURL: pmsetURL, timeoutSeconds: pmsetTimeoutSeconds)
+        let result = runner.run(arguments: arguments)
+        if result.timedOut {
+            return (false, "pmset command timed out after \(Int(pmsetTimeoutSeconds)) seconds")
         }
+        return (result.success, result.output)
     }
 }

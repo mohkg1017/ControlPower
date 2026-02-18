@@ -23,13 +23,13 @@ settings:
       ONLY_ACTIVE_ARCH: YES
       DEBUG_INFORMATION_FORMAT: dwarf
       SWIFT_OPTIMIZATION_LEVEL: -Onone
-      OTHER_SWIFT_FLAGS: -Xfrontend -warn-long-function-bodies=200 -Xfrontend -warn-long-expression-type-checking=200
+      OTHER_SWIFT_FLAGS: -Xfrontend -warn-long-function-bodies=100 -Xfrontend -warn-long-expression-type-checking=100
     Profiling:
       SWIFT_COMPILATION_MODE: incremental
       ONLY_ACTIVE_ARCH: YES
       DEBUG_INFORMATION_FORMAT: dwarf
       SWIFT_OPTIMIZATION_LEVEL: -Onone
-      OTHER_SWIFT_FLAGS: -Xfrontend -warn-long-function-bodies=200 -Xfrontend -warn-long-expression-type-checking=200
+      OTHER_SWIFT_FLAGS: -Xfrontend -warn-long-function-bodies=100 -Xfrontend -warn-long-expression-type-checking=100
     Release:
       SWIFT_COMPILATION_MODE: wholemodule
       SWIFT_OPTIMIZATION_LEVEL: -O
@@ -75,16 +75,19 @@ targets:
       - name: Embed Helper Binary
         script: |
           set -euo pipefail
-          helper="$BUILT_PRODUCTS_DIR/ControlPowerHelper"
+          helper="${SCRIPT_INPUT_FILE_0:-}"
+          if [[ -z "$helper" || ! -r "$helper" ]]; then
+            helper="${SCRIPT_INPUT_FILE_1:-}"
+          fi
           destination="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/ControlPowerHelper"
-          if [[ ! -f "$helper" ]]; then
-            echo "error: missing helper binary at $helper"
+          if [[ -z "$helper" || ! -r "$helper" ]]; then
+            echo "error: missing readable helper binary from script inputs"
             exit 1
           fi
-          cp "$helper" "$destination"
-          chmod 755 "$destination"
+          /usr/bin/install -m 755 "$helper" "$destination"
         inputFiles:
           - $(BUILT_PRODUCTS_DIR)/ControlPowerHelper
+          - $(DSTROOT)/usr/local/bin/ControlPowerHelper
         outputFiles:
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ControlPowerHelper
     settings:
@@ -94,7 +97,6 @@ targets:
         INFOPLIST_FILE: App/Resources/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_HARDENED_RUNTIME: YES
-        ENABLE_USER_SCRIPT_SANDBOXING: NO
       configs:
         Profiling:
           CODE_SIGN_ENTITLEMENTS: App/Resources/ControlPowerProfiling.entitlements

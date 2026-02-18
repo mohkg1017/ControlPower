@@ -4,8 +4,6 @@ public enum PowerHelperConstants {
     public static let daemonPlistName = "com.moe.controlpower.helper.plist"
     public static let daemonLabel = "com.moe.controlpower.helper"
     public static let machServiceName = "com.moe.controlpower.helper.mach"
-    public static let mainAppBundleIdentifier = "com.moe.controlpower"
-    public static let mainAppTeamIdentifier = "45954WVVY3"
 }
 
 public enum PowerPreset: Int, CaseIterable, Identifiable, Sendable {

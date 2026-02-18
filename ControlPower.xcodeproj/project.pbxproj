@@ -12,6 +12,7 @@
 		22FE81351D2F881B578265FE /* AppSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 586524534E5C7F6EAE229100 /* AppSettingsView.swift */; };
 		23B4BF0477EC34E9AAB1F7DB /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 907D05B6640E38587EC61113 /* main.swift */; };
 		28C509CEB2CC7740A1F39C7E /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C360EE83EAC691E3EE4CED81 /* AppSettings.swift */; };
+		2AE7A3F9D8A522A93F00C945 /* TimedProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C37FCB1E2C2F0DB5DE8507BF /* TimedProcessRunner.swift */; };
 		36DC4005EEB5D6490EF79109 /* PowerHelperXPCProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9F0D7052F036B96CBA938E5 /* PowerHelperXPCProtocol.swift */; };
 		6A4EBD4FECD67D3B5A0921CE /* HelperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9774F48955860549B53ADA04 /* HelperService.swift */; };
 		6F47554028CD76DF960DDF6D /* com.moe.controlpower.helper.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = A226D81853A36A42D4BE4192 /* com.moe.controlpower.helper.plist */; };
@@ -22,6 +23,7 @@
 		BA650522DE2235E165752097 /* PowerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 624CF9D66184F5CE10877F34 /* PowerModels.swift */; };
 		C730912DF862DEA38828112A /* PowerHelperXPCProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9F0D7052F036B96CBA938E5 /* PowerHelperXPCProtocol.swift */; };
 		E2AAE921BCBE789451D5EC3C /* PowerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 624CF9D66184F5CE10877F34 /* PowerModels.swift */; };
+		EA85C4D1552F5E27F7D7FB09 /* TimedProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C37FCB1E2C2F0DB5DE8507BF /* TimedProcessRunner.swift */; };
 		F4FAC69DD0E8329090495C09 /* ControlPowerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D54C5DB2B86EACC4549F571 /* ControlPowerTests.swift */; };
 		F5823FF55FAE5ED7F439D0D9 /* ServiceManagement.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9EFEC6DE9BE3E22C6BA72568 /* ServiceManagement.framework */; };
 /* End PBXBuildFile section */
@@ -70,6 +72,7 @@
 		9EFEC6DE9BE3E22C6BA72568 /* ServiceManagement.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ServiceManagement.framework; path = System/Library/Frameworks/ServiceManagement.framework; sourceTree = SDKROOT; };
 		A226D81853A36A42D4BE4192 /* com.moe.controlpower.helper.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = com.moe.controlpower.helper.plist; sourceTree = "<group>"; };
 		C360EE83EAC691E3EE4CED81 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		C37FCB1E2C2F0DB5DE8507BF /* TimedProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimedProcessRunner.swift; sourceTree = "<group>"; };
 		C5BBB67192A324C0CBDBFC86 /* MenuBarPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPanelView.swift; sourceTree = "<group>"; };
 		E9F0D7052F036B96CBA938E5 /* PowerHelperXPCProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerHelperXPCProtocol.swift; sourceTree = "<group>"; };
 		E9F2F8A16095D686DD7679ED /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -133,6 +136,7 @@
 			children = (
 				E9F0D7052F036B96CBA938E5 /* PowerHelperXPCProtocol.swift */,
 				624CF9D66184F5CE10877F34 /* PowerModels.swift */,
+				C37FCB1E2C2F0DB5DE8507BF /* TimedProcessRunner.swift */,
 			);
 			name = Sources;
 			path = Shared/Sources;
@@ -305,6 +309,7 @@
 			);
 			inputPaths = (
 				"$(BUILT_PRODUCTS_DIR)/ControlPowerHelper",
+				"$(DSTROOT)/usr/local/bin/ControlPowerHelper",
 			);
 			name = "Embed Helper Binary";
 			outputFileListPaths = (
@@ -314,7 +319,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\nhelper=\"$BUILT_PRODUCTS_DIR/ControlPowerHelper\"\ndestination=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/ControlPowerHelper\"\nif [[ ! -f \"$helper\" ]]; then\n  echo \"error: missing helper binary at $helper\"\n  exit 1\nfi\ncp \"$helper\" \"$destination\"\nchmod 755 \"$destination\"\n";
+			shellScript = "set -euo pipefail\nhelper=\"${SCRIPT_INPUT_FILE_0:-}\"\nif [[ -z \"$helper\" || ! -r \"$helper\" ]]; then\n  helper=\"${SCRIPT_INPUT_FILE_1:-}\"\nfi\ndestination=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/ControlPowerHelper\"\nif [[ -z \"$helper\" || ! -r \"$helper\" ]]; then\n  echo \"error: missing readable helper binary from script inputs\"\n  exit 1\nfi\n/usr/bin/install -m 755 \"$helper\" \"$destination\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -332,6 +337,7 @@
 				1B66749E05BBDA0B5A1A4A74 /* PowerDaemonClient.swift in Sources */,
 				36DC4005EEB5D6490EF79109 /* PowerHelperXPCProtocol.swift in Sources */,
 				E2AAE921BCBE789451D5EC3C /* PowerModels.swift in Sources */,
+				EA85C4D1552F5E27F7D7FB09 /* TimedProcessRunner.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -350,6 +356,7 @@
 				6A4EBD4FECD67D3B5A0921CE /* HelperService.swift in Sources */,
 				C730912DF862DEA38828112A /* PowerHelperXPCProtocol.swift in Sources */,
 				BA650522DE2235E165752097 /* PowerModels.swift in Sources */,
+				2AE7A3F9D8A522A93F00C945 /* TimedProcessRunner.swift in Sources */,
 				23B4BF0477EC34E9AAB1F7DB /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -394,7 +401,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = App/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -468,7 +474,6 @@
 				CODE_SIGN_ENTITLEMENTS = App/Resources/ControlPowerProfiling.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = App/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -567,7 +572,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = App/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -656,7 +660,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				OTHER_SWIFT_FLAGS = "-Xfrontend -warn-long-function-bodies=200 -Xfrontend -warn-long-expression-type-checking=200";
+				OTHER_SWIFT_FLAGS = "-Xfrontend -warn-long-function-bodies=100 -Xfrontend -warn-long-expression-type-checking=100";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -724,7 +728,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				OTHER_SWIFT_FLAGS = "-Xfrontend -warn-long-function-bodies=200 -Xfrontend -warn-long-expression-type-checking=200";
+				OTHER_SWIFT_FLAGS = "-Xfrontend -warn-long-function-bodies=100 -Xfrontend -warn-long-expression-type-checking=100";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
