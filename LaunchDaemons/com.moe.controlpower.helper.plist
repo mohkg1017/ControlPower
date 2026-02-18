@@ -11,9 +11,5 @@
     <key>com.moe.controlpower.helper.mach</key>
     <true/>
   </dict>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
 </dict>
 </plist>
