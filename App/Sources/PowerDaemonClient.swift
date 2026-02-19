@@ -23,6 +23,7 @@ public protocol PowerDaemonClientProtocol: Sendable {
     func fetchStatus() async throws -> PowerHelperStatus
     func setDisableSleep(_ enabled: Bool) async throws
     func restoreDefaults() async throws
+    func displaySleepNow() async throws
     func isHelperEnabled() -> Bool
     func setHelperEnabled(_ enabled: Bool) throws
 }
@@ -117,6 +118,27 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
                     done(success, message)
                 }
             }
+        }
+    }
+
+    public func displaySleepNow() async throws {
+        if let pmsetValidationError = Self.pmsetValidationError {
+            throw NSError(
+                domain: "ControlPower.LocalPMSet",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: pmsetValidationError]
+            )
+        }
+        let result = await Task.detached(priority: .userInitiated) {
+            TimedProcessRunner(executableURL: Self.pmsetURL, timeoutSeconds: Self.xpcTimeoutSeconds)
+                .run(arguments: ["displaysleepnow"])
+        }.value
+        guard result.success else {
+            throw NSError(
+                domain: "ControlPower.LocalPMSet",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: result.timedOut ? "pmset displaysleepnow timed out" : (result.output.isEmpty ? "pmset displaysleepnow failed" : result.output)]
+            )
         }
     }
 

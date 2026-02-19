@@ -1,15 +1,9 @@
 import Foundation
 
-@MainActor
-final class HelperService: NSObject, @preconcurrency PowerHelperXPCProtocol {
+final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable {
     private let pmsetURL = URL(fileURLWithPath: "/usr/bin/pmset")
     private let pmsetTimeoutSeconds: TimeInterval = 8
-    private let pmsetValidationError: String?
-
-    override init() {
-        self.pmsetValidationError = SystemExecutableValidator.validateExecutable(at: pmsetURL)
-        super.init()
-    }
+    private let pmsetValidationError: String? = SystemExecutableValidator.validateExecutable(at: URL(fileURLWithPath: "/usr/bin/pmset"))
 
     func ping(_ reply: @escaping (String) -> Void) {
         reply("pong")

@@ -189,6 +189,12 @@ public final class AppViewModel {
         remainingSeconds = nil
     }
 
+    public func sleepDisplay() {
+        enqueueOperation("Sleep display") { viewModel in
+            try await viewModel.client.displaySleepNow()
+        }
+    }
+
     public func restoreDefaults() {
         cancelTimer()
         enqueueOperation("Restore defaults") { viewModel in

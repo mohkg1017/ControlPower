@@ -102,7 +102,8 @@ struct MainView: View {
 
                 VStack(spacing: 16) {
                     mainActionButton
-                    
+                    sleepDisplayButton
+
                     if viewModel.snapshot.disableSleep == true {
                         timerControls
                     }
@@ -248,6 +249,23 @@ struct MainView: View {
         .disabled(viewModel.isBusy)
     }
 
+    private var sleepDisplayButton: some View {
+        Button {
+            viewModel.sleepDisplay()
+        } label: {
+            HStack {
+                Image(systemName: "display")
+                Text("Sleep Display Now")
+                    .fontWeight(.semibold)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .disabled(viewModel.isBusy)
+    }
+
     private var secondaryActions: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Diagnostics")
@@ -284,63 +302,8 @@ struct MainView: View {
     private var advancedView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // Header with Info and Copy Action
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("System Power Configuration")
-                            .font(.headline)
-                        Text("Currently active pmset -g settings")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Button {
-                        let pasteboard = NSPasteboard.general
-                        pasteboard.clearContents()
-                        pasteboard.setString(viewModel.snapshot.summary, forType: .string)
-                    } label: {
-                        Label("Copy Output", systemImage: "doc.on.doc")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
-
-                // The Terminal-Style Box
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        Circle().fill(.red.opacity(0.6)).frame(width: 10, height: 10)
-                        Circle().fill(.orange.opacity(0.6)).frame(width: 10, height: 10)
-                        Circle().fill(.green.opacity(0.6)).frame(width: 10, height: 10)
-                        Spacer()
-                        Text("pmset -g")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.primary.opacity(0.05))
-                    
-                    Divider()
-
-                    Text(viewModel.snapshot.summary.isEmpty ? "No pmset output yet" : viewModel.snapshot.summary)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                )
-                .padding(.horizontal, 24)
-
-                // Context and Legend Section
+                advancedHeader
+                advancedTerminalBox
                 GroupBox("Key Parameter Descriptions") {
                     VStack(alignment: .leading, spacing: 12) {
                         parameterDesc(key: "SleepDisabled", desc: "If 1, system-wide sleep is inhibited.")
@@ -355,6 +318,64 @@ struct MainView: View {
             }
         }
         .navigationTitle("Raw Status")
+    }
+
+    private var advancedHeader: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("System Power Configuration")
+                    .font(.headline)
+                Text("Currently active pmset -g settings")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(viewModel.snapshot.summary, forType: .string)
+            } label: {
+                Label("Copy Output", systemImage: "doc.on.doc")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 24)
+    }
+
+    private var advancedTerminalBox: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Circle().fill(.red.opacity(0.6)).frame(width: 10, height: 10)
+                Circle().fill(.orange.opacity(0.6)).frame(width: 10, height: 10)
+                Circle().fill(.green.opacity(0.6)).frame(width: 10, height: 10)
+                Spacer()
+                Text("pmset -g")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.primary.opacity(0.05))
+
+            Divider()
+
+            Text(viewModel.snapshot.summary.isEmpty ? "No pmset output yet" : viewModel.snapshot.summary)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+        )
+        .padding(.horizontal, 24)
     }
 
     private func parameterDesc(key: String, desc: String) -> some View {

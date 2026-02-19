@@ -72,6 +72,12 @@ Tip: list valid signing identities with:
 security find-identity -v -p codesigning | grep "Developer ID Application"
 ```
 
+`ControlPowerRelease.app` skips tests by default to avoid intermittent `xctest` bundle failures in scripted runs. To include tests, launch it from Terminal with:
+
+```bash
+RUN_TESTS=1 scripts/run_release_from_launcher.sh
+```
+
 ## Notes
 
 - LaunchDaemon plist is bundled at `Contents/Library/LaunchDaemons/com.moe.controlpower.helper.plist`.

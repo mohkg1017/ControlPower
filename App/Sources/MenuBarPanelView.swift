@@ -75,6 +75,38 @@ struct MenuBarPanelView: View {
                     .disabled(viewModel.isBusy)
             }
 
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(.purple.opacity(0.1))
+                        .frame(width: 44, height: 44)
+
+                    Image(systemName: "display")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.purple)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sleep Display")
+                        .font(.system(.body, weight: .semibold))
+                    Text("Turn off screen instantly")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    viewModel.sleepDisplay()
+                } label: {
+                    Image(systemName: "power.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(.purple)
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isBusy)
+            }
+
             if let error = viewModel.lastError {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")

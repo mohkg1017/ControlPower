@@ -33,6 +33,16 @@ if [[ "${NOTARY_PROFILE:-}" == "your-notary-profile" ]]; then
   unset NOTARY_PROFILE
 fi
 
+if [[ "${RUN_TESTS:-0}" == "1" ]]; then
+  SKIP_TESTS=0
+elif [[ -z "${SKIP_TESTS:-}" ]]; then
+  SKIP_TESTS=1
+fi
+
+if [[ "${SKIP_TESTS:-0}" == "1" ]]; then
+  echo "Skipping tests in launcher flow (set RUN_TESTS=1 to enable tests)."
+fi
+
 VERSION="${1:-}"
 BUILD="${2:-}"
 
@@ -56,4 +66,5 @@ else
 fi
 
 cd "$ROOT_DIR"
+export SKIP_TESTS
 exec "$ROOT_DIR/scripts/release.sh" "$VERSION" "$BUILD"

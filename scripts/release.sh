@@ -92,10 +92,18 @@ fi
 
 echo "Signing app with: $DEVELOPER_ID_APP"
 /usr/bin/codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APP" "$HELPER_PATH"
+
+if [[ -d "$ARCHIVE_APP_PATH/Contents/Frameworks" ]]; then
+  while IFS= read -r -d '' framework; do
+    /usr/bin/codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APP" "$framework"
+  done < <(find "$ARCHIVE_APP_PATH/Contents/Frameworks" -type d -name '*.framework' -print0)
+fi
+
 /usr/bin/codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APP" "$ARCHIVE_APP_PATH"
 
 EXPORT_OPTIONS="$BUILD_DIR/ExportOptions.plist"
-cat > "$EXPORT_OPTIONS" <<EOF
+if [[ "${RUN_EXPORT_ARCHIVE:-0}" == "1" ]]; then
+  cat > "$EXPORT_OPTIONS" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -108,17 +116,20 @@ cat > "$EXPORT_OPTIONS" <<EOF
 </plist>
 EOF
 
-if xcodebuild \
-  -exportArchive \
-  -archivePath "$ARCHIVE_PATH" \
-  -exportPath "$EXPORT_DIR" \
-  -exportOptionsPlist "$EXPORT_OPTIONS"; then
-  EXPORTED_APP_PATH="$EXPORT_DIR/$APP_NAME.app"
-  if [[ -d "$EXPORTED_APP_PATH" ]]; then
-    APP_PATH="$EXPORTED_APP_PATH"
+  if xcodebuild \
+    -exportArchive \
+    -archivePath "$ARCHIVE_PATH" \
+    -exportPath "$EXPORT_DIR" \
+    -exportOptionsPlist "$EXPORT_OPTIONS"; then
+    EXPORTED_APP_PATH="$EXPORT_DIR/$APP_NAME.app"
+    if [[ -d "$EXPORTED_APP_PATH" ]]; then
+      APP_PATH="$EXPORTED_APP_PATH"
+    fi
+  else
+    echo "warning: exportArchive failed; using archived app instead"
   fi
 else
-  echo "warning: exportArchive failed; falling back to archived app"
+  echo "Skipping exportArchive; using archived app for DMG packaging."
 fi
 
 bash "$ROOT_DIR/scripts/check-release-entitlements.sh" "$APP_PATH"
@@ -139,7 +150,24 @@ ln -sf /Applications "$DMGROOT/Applications"
 hdiutil create -volname "$APP_NAME" -srcfolder "$DMGROOT" -ov -format UDZO "$DMG_PATH"
 
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
-  xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
+  NOTARY_SUBMIT_JSON="$ARCHIVES/notary-submit.json"
+  NOTARY_LOG_JSON="$ARCHIVES/notary-log.json"
+  xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait --output-format json > "$NOTARY_SUBMIT_JSON"
+
+  NOTARY_ID="$(/usr/bin/python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("id") or d.get("jobId") or d.get("submissionId") or "")' "$NOTARY_SUBMIT_JSON")"
+  NOTARY_STATUS="$(/usr/bin/python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("status") or "")' "$NOTARY_SUBMIT_JSON")"
+
+  if [[ "$NOTARY_STATUS" != "Accepted" ]]; then
+    echo "error: notarization failed with status: ${NOTARY_STATUS:-unknown}"
+    if [[ -n "$NOTARY_ID" ]]; then
+      xcrun notarytool log "$NOTARY_ID" --keychain-profile "$NOTARY_PROFILE" "$NOTARY_LOG_JSON" || true
+      if [[ -f "$NOTARY_LOG_JSON" ]]; then
+        cat "$NOTARY_LOG_JSON"
+      fi
+    fi
+    exit 1
+  fi
+
   xcrun stapler staple "$DMG_PATH"
 else
   echo "warning: NOTARY_PROFILE not set; skipping notarization and stapling"

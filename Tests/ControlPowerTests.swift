@@ -552,6 +552,10 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
         }
     }
 
+    func displaySleepNow() async throws {
+        await withMutationTracking()
+    }
+
     func setDisableSleep(_ enabled: Bool) async throws {
         let waitContinuation = state.withLock { state -> CheckedContinuation<Void, Never>? in
             state.lastDisableSleepValue = enabled
