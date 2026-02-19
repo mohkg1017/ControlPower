@@ -43,22 +43,31 @@ public struct TimedProcessRunner: Sendable {
 
         let finishedInTime = exitSignal.wait(timeout: .now() + timeoutSeconds) == .success
         if !finishedInTime {
+            var processStopped = false
             if process.isRunning {
                 process.terminate()
             }
-            if exitSignal.wait(timeout: .now() + 1) == .timedOut, process.isRunning {
+            processStopped = exitSignal.wait(timeout: .now() + 1) == .success || !process.isRunning
+
+            if !processStopped && process.isRunning {
                 kill(process.processIdentifier, SIGKILL)
-                _ = exitSignal.wait(timeout: .now() + 1)
+                processStopped = exitSignal.wait(timeout: .now() + 1) == .success || !process.isRunning
             }
-            let output = readOutput(from: outputPipe)
-            if output.isEmpty {
+
+            if !processStopped {
+                outputPipe.fileHandleForReading.closeFile()
                 return TimedProcessResult(
                     success: false,
                     output: "Command timed out after \(formatTimeout(timeoutSeconds)) seconds",
                     timedOut: true
                 )
             }
-            return TimedProcessResult(success: false, output: output, timedOut: true)
+
+            return TimedProcessResult(
+                success: false,
+                output: "Command timed out after \(formatTimeout(timeoutSeconds)) seconds",
+                timedOut: true
+            )
         }
 
         let output = readOutput(from: outputPipe)

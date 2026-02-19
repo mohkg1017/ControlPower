@@ -1,4 +1,5 @@
 import Foundation
+import ServiceManagement
 import Synchronization
 import XCTest
 @testable import ControlPowerCore
@@ -328,6 +329,16 @@ final class ControlPowerTests: XCTestCase {
         XCTAssertFalse(policy.isAuthorizedClient(bundleIdentifier: "com.moe.controlpower", teamIdentifier: "TEAM123"))
     }
 
+    func testHelperStatusAllowsWritesOnlyWhenEnabled() {
+        XCTAssertTrue(PowerDaemonClient.helperStatusAllowsWrites(.enabled))
+    }
+
+    func testHelperStatusAllowsWritesRejectsUnavailableStates() {
+        XCTAssertFalse(PowerDaemonClient.helperStatusAllowsWrites(.requiresApproval))
+        XCTAssertFalse(PowerDaemonClient.helperStatusAllowsWrites(.notRegistered))
+        XCTAssertFalse(PowerDaemonClient.helperStatusAllowsWrites(.notFound))
+    }
+
     func testXPCReplyGateCancelsInstalledTimeoutTask() async throws {
         let value = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int, Error>) in
             let gate = XPCReplyGate(continuation: continuation) {}
@@ -370,6 +381,34 @@ final class ControlPowerTests: XCTestCase {
         XCTAssertNil(viewModel.remainingSeconds)
         XCTAssertEqual(client.lastDisableSleepValue, false)
     }
+
+    @MainActor
+    func testRepairDaemonClearsHelperNeedsRepair() async {
+        let client = FakePowerDaemonClient()
+        client.daemonBroken = true
+
+        let viewModel = AppViewModel(client: client)
+        viewModel.helperNeedsRepair = true
+
+        client.daemonBroken = false
+        await viewModel.repairDaemon()
+
+        XCTAssertFalse(viewModel.helperNeedsRepair)
+        XCTAssertNil(viewModel.lastError)
+        XCTAssertEqual(client.repairDaemonCallCount, 1)
+    }
+
+    @MainActor
+    func testStartupAutoRepairsWhenDaemonBroken() async {
+        let client = FakePowerDaemonClient()
+        client.daemonBroken = true
+
+        let viewModel = AppViewModel(client: client, isTestEnvironment: false)
+        viewModel.startup()
+        await client.waitForRepairCallCount(1)
+
+        XCTAssertEqual(client.repairDaemonCallCount, 1)
+    }
 }
 
 private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
@@ -385,15 +424,18 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
         var setHelperEnabledShouldFail = false
         var holdFetchStatus = false
         var restoreDefaultsResult: Result<Void, Error> = .success(())
+        var daemonBroken = false
         var registerDaemonCallCount = 0
         var fetchStatusCallCount = 0
         var setDisableSleepCallCount = 0
         var restoreDefaultsCallCount = 0
+        var repairDaemonCallCount = 0
         var maxConcurrentMutationCalls = 0
         var lastDisableSleepValue: Bool?
         var activeMutationCalls = 0
         var fetchStatusCountWait: (expected: Int, continuation: CheckedContinuation<Void, Never>)?
         var mutationCountWait: (expected: Int, continuation: CheckedContinuation<Void, Never>)?
+        var repairCountWait: (expected: Int, continuation: CheckedContinuation<Void, Never>)?
         var idleMutationWait: CheckedContinuation<Void, Never>?
         var heldFetchStatusContinuation: CheckedContinuation<Void, Never>?
 
@@ -438,8 +480,14 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
     var registerDaemonCallCount: Int { state.withLock { $0.registerDaemonCallCount } }
     var setDisableSleepCallCount: Int { state.withLock { $0.setDisableSleepCallCount } }
     var restoreDefaultsCallCount: Int { state.withLock { $0.restoreDefaultsCallCount } }
+    var repairDaemonCallCount: Int { state.withLock { $0.repairDaemonCallCount } }
     var maxConcurrentMutationCalls: Int { state.withLock { $0.maxConcurrentMutationCalls } }
     var lastDisableSleepValue: Bool? { state.withLock { $0.lastDisableSleepValue } }
+
+    var daemonBroken: Bool {
+        get { state.withLock { $0.daemonBroken } }
+        set { state.withLock { $0.daemonBroken = newValue } }
+    }
 
     func registerDaemonIfNeeded() throws {
         let result = state.withLock { state in
@@ -459,6 +507,41 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
             throw FakePowerDaemonClientError.approvalMissing
         }
         state.withLock { $0.helperEnabled = enabled }
+    }
+
+    func isDaemonBroken() -> Bool {
+        state.withLock { $0.daemonBroken }
+    }
+
+    func repairDaemon() async throws {
+        let waitContinuation = state.withLock { state -> CheckedContinuation<Void, Never>? in
+            state.repairDaemonCallCount += 1
+            if let wait = state.repairCountWait, state.repairDaemonCallCount >= wait.expected {
+                state.repairCountWait = nil
+                return wait.continuation
+            }
+            return nil
+        }
+        waitContinuation?.resume()
+    }
+
+    @MainActor
+    func waitForRepairCallCount(_ expected: Int) async {
+        if state.withLock({ $0.repairDaemonCallCount >= expected }) {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            let shouldResumeNow = state.withLock { state in
+                if state.repairDaemonCallCount >= expected {
+                    return true
+                }
+                state.repairCountWait = (expected, continuation)
+                return false
+            }
+            if shouldResumeNow {
+                continuation.resume()
+            }
+        }
     }
 
     @MainActor

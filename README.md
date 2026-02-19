@@ -78,6 +78,41 @@ security find-identity -v -p codesigning | grep "Developer ID Application"
 RUN_TESTS=1 scripts/run_release_from_launcher.sh
 ```
 
+## Xcode Agent Self-Heal (Codex + Claude)
+
+Install event-based self-healing for Xcode Coding Assistant links/config:
+
+```bash
+scripts/install_xcode_agent_selfheal.sh
+```
+
+The installer copies the doctor script into `~/Library/Application Support/ControlPower/xcode-agent-selfheal/` so LaunchAgent execution is not blocked by Desktop/Documents privacy protections.
+
+Run a manual health check at any time:
+
+```bash
+scripts/doctor_xcode_agents_once.sh
+```
+
+Or run check-only mode (no repairs):
+
+```bash
+scripts/doctor_xcode_agents.sh --check-only --verbose
+```
+
+Remove the self-heal LaunchAgent:
+
+```bash
+scripts/install_xcode_agent_selfheal.sh --uninstall
+```
+
+The doctor script repairs:
+- `~/Library/Developer/Xcode/CodingAssistant/Agents/Versions/*/{codex,claude}` symlinks
+- `~/Library/Developer/Xcode/CodingAssistant/codex/config.toml` xcode profile block
+- `~/Library/Developer/Xcode/CodingAssistant/ClaudeAgentConfig/settings.json` model setting
+
+It does not auto-upgrade binaries; it only points Xcode to whatever local `codex` and `claude` executables are already installed.
+
 ## Notes
 
 - LaunchDaemon plist is bundled at `Contents/Library/LaunchDaemons/com.moe.controlpower.helper.plist`.

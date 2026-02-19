@@ -21,13 +21,16 @@ public final class AppViewModel {
     public var isHelperEnabled = false
     public var isBusy = false
     public var lastError: String?
+    public var helperNeedsRepair = false
 
     public var remainingSeconds: Int?
     public var selectedDurationMinutes: Int = 60
     private var timerTask: Task<Void, Never>?
 
     public var batteryLevel: Int = 100
-    public var isLowBatteryProtectionEnabled: Bool = true
+    public var isLowBatteryProtectionEnabled: Bool = UserDefaults.standard.object(forKey: "lowBatteryProtection") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(isLowBatteryProtectionEnabled, forKey: "lowBatteryProtection") }
+    }
     private var batteryMonitorTask: Task<Void, Never>?
 
     private let client: any PowerDaemonClientProtocol
@@ -114,9 +117,14 @@ public final class AppViewModel {
         }
         
         isHelperEnabled = client.isHelperEnabled()
+        helperNeedsRepair = client.isDaemonBroken()
 
         Task { [weak self] in
-            await self?.refreshStatus()
+            guard let self else { return }
+            await self.refreshStatus()
+            if self.helperNeedsRepair {
+                await self.repairDaemon()
+            }
         }
     }
 
@@ -131,10 +139,28 @@ public final class AppViewModel {
             snapshot = status.snapshot
             statusSource = status.source
             lastError = nil
+            helperNeedsRepair = status.source == .localFallback && isHelperEnabled
             checkBatterySafety()
         } catch {
+            if client.isDaemonBroken() {
+                helperNeedsRepair = true
+            }
             lastError = "Refresh status failed: \(safeErrorMessage(error))"
         }
+    }
+
+    public func repairDaemon() async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await client.repairDaemon()
+            helperNeedsRepair = false
+            lastError = nil
+        } catch {
+            lastError = "Helper repair failed: \(safeErrorMessage(error))"
+        }
+        isHelperEnabled = client.isHelperEnabled()
+        await refreshStatus()
     }
 
     public func toggleHelper() {

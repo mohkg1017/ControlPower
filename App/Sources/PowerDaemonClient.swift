@@ -26,14 +26,17 @@ public protocol PowerDaemonClientProtocol: Sendable {
     func displaySleepNow() async throws
     func isHelperEnabled() -> Bool
     func setHelperEnabled(_ enabled: Bool) throws
+    func isDaemonBroken() -> Bool
+    func repairDaemon() async throws
 }
 
 public struct PowerDaemonClient: PowerDaemonClientProtocol {
     nonisolated private static let pmsetURL = URL(fileURLWithPath: "/usr/bin/pmset")
     nonisolated private static let launchctlURL = URL(fileURLWithPath: "/bin/launchctl")
-    nonisolated private static let xpcTimeoutSeconds: TimeInterval = 8
+    nonisolated private static let xpcTimeoutSeconds: TimeInterval = 18
+    nonisolated private static let xpcProbeTimeoutSeconds: TimeInterval = 5
+    nonisolated private static let localPMSetTimeoutSeconds: TimeInterval = 8
     nonisolated private static let registrationProbeTimeoutSeconds: TimeInterval = 3
-    nonisolated private static let reRegisterDelayNanoseconds: UInt64 = 600_000_000
     nonisolated private static let pmsetValidationError = SystemExecutableValidator.validateExecutable(at: pmsetURL)
     nonisolated private static let expectedProgramIdentifier = "Contents/Resources/ControlPowerHelper"
 
@@ -43,16 +46,15 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         SMAppService.daemon(plistName: PowerHelperConstants.daemonPlistName)
     }
 
+    nonisolated static func helperStatusAllowsWrites(_ status: SMAppService.Status) -> Bool {
+        status == .enabled
+    }
+
     public func registerDaemonIfNeeded() throws {
         switch daemonService.status {
         case .notRegistered, .notFound:
             try daemonService.register()
         case .enabled:
-            if needsDaemonRefresh() {
-                Task {
-                    try? await repairDaemonRegistration()
-                }
-            }
             return
         case .requiresApproval:
             return
@@ -62,7 +64,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     public func isHelperEnabled() -> Bool {
-        return daemonService.status == .enabled || daemonService.status == .requiresApproval
+        Self.helperStatusAllowsWrites(daemonService.status)
     }
 
     public func setHelperEnabled(_ enabled: Bool) throws {
@@ -71,6 +73,23 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         } else {
             try daemonService.unregister()
         }
+    }
+
+    public func isDaemonBroken() -> Bool {
+        guard daemonService.status == .enabled else { return false }
+        let result = TimedProcessRunner(
+            executableURL: Self.launchctlURL,
+            timeoutSeconds: Self.registrationProbeTimeoutSeconds
+        ).run(arguments: ["print", "system/\(PowerHelperConstants.daemonLabel)"])
+        guard result.success else { return false }
+        return result.output.contains("spawn failed") || result.output.contains("EX_CONFIG")
+    }
+
+    public func repairDaemon() async throws {
+        await bootoutDaemon()
+        try? await daemonService.unregister()
+        try? await Task.sleep(for: .seconds(1))
+        try daemonService.register()
     }
 
     public func fetchStatus() async throws -> PowerHelperStatus {
@@ -86,9 +105,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         }
 
         do {
-            return try await withHelperRepair {
-                try await Self.fetchStatusFromHelper()
-            }
+            return try await Self.fetchStatusFromHelper()
         } catch {
             let snapshot = try await Task.detached(priority: .userInitiated) {
                 try Self.fetchLocalPMSetSnapshot()
@@ -130,7 +147,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             )
         }
         let result = await Task.detached(priority: .userInitiated) {
-            TimedProcessRunner(executableURL: Self.pmsetURL, timeoutSeconds: Self.xpcTimeoutSeconds)
+            TimedProcessRunner(executableURL: Self.pmsetURL, timeoutSeconds: Self.localPMSetTimeoutSeconds)
                 .run(arguments: ["displaysleepnow"])
         }.value
         guard result.success else {
@@ -142,14 +159,22 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         }
     }
 
-    private func ensureHelperReadyForWrites() throws {
-        guard daemonService.status == .enabled else {
-            throw NSError(
-                domain: "ControlPower.Helper",
-                code: 8,
-                userInfo: [NSLocalizedDescriptionKey: "Write actions need the ControlPower helper approved in System Settings > Login Items."]
-            )
+    private func ensureHelperReadyForWrites() async throws {
+        let status = daemonService.status
+        if Self.helperStatusAllowsWrites(status) {
+            return
         }
+
+        let isReachable = (try? await Self.pingHelper(timeoutSeconds: Self.xpcProbeTimeoutSeconds)) == true
+        guard !isReachable else {
+            return
+        }
+
+        throw NSError(
+            domain: "ControlPower.Helper",
+            code: 8,
+            userInfo: [NSLocalizedDescriptionKey: "Write actions need the ControlPower helper approved in System Settings > Login Items. Current helper status: \(daemonStatusDescription(status))."]
+        )
     }
 
     nonisolated private static func fetchStatusFromHelper() async throws -> PowerHelperStatus {
@@ -178,12 +203,12 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             )
         }
 
-        let result = TimedProcessRunner(executableURL: pmsetURL, timeoutSeconds: xpcTimeoutSeconds)
+        let result = TimedProcessRunner(executableURL: pmsetURL, timeoutSeconds: localPMSetTimeoutSeconds)
             .run(arguments: ["-g"])
         guard result.success else {
             let output: String
             if result.timedOut {
-                output = "pmset -g timed out after \(Int(xpcTimeoutSeconds)) seconds"
+                output = "pmset -g timed out after \(Int(localPMSetTimeoutSeconds)) seconds"
             } else if result.output.isEmpty {
                 output = "pmset -g failed"
             } else {
@@ -226,6 +251,10 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             return true
         }
 
+        if result.output.contains("job state = spawn failed") {
+            return true
+        }
+
         guard let identifier = registeredProgramIdentifier(from: result.output) else {
             return false
         }
@@ -249,65 +278,17 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     private func performWrite(_ writeOperation: @escaping () async throws -> Void) async throws {
-        try ensureHelperReadyForWrites()
-        do {
-            try await writeOperation()
-        } catch {
-            guard shouldRepairHelper(after: error) else {
-                throw error
-            }
-            try await repairDaemonRegistration()
-            try ensureHelperReadyForWrites()
-            try await writeOperation()
-        }
+        try await ensureHelperReadyForWrites()
+        try await writeOperation()
     }
 
-    private func withHelperRepair<T: Sendable>(_ operation: @escaping () async throws -> T) async throws -> T {
-        do {
-            return try await operation()
-        } catch {
-            guard shouldRepairHelper(after: error) else {
-                throw error
-            }
-            try await repairDaemonRegistration()
-            return try await operation()
-        }
-    }
-
-    private func shouldRepairHelper(after error: Error) -> Bool {
-        guard daemonService.status == .enabled else {
-            return false
-        }
-
-        let nsError = error as NSError
-        if nsError.domain == "ControlPower.Helper" {
-            switch nsError.code {
-            case 1, 2, 8:
-                return false
-            case 3, 5, 6, 7:
-                return true
-            default:
-                return true
-            }
-        }
-
-        if nsError.domain == NSCocoaErrorDomain {
-            return true
-        }
-
-        if nsError.domain.localizedCaseInsensitiveContains("xpc") {
-            return true
-        }
-
-        return true
-    }
-
-    private func repairDaemonRegistration() async throws {
-        if daemonService.status == .enabled {
-            try await daemonService.unregister()
-            try? await Task.sleep(nanoseconds: Self.reRegisterDelayNanoseconds)
-        }
-        try daemonService.register()
+    nonisolated private func bootoutDaemon() async {
+        _ = await Task.detached(priority: .utility) {
+            TimedProcessRunner(
+                executableURL: Self.launchctlURL,
+                timeoutSeconds: Self.registrationProbeTimeoutSeconds
+            ).run(arguments: ["bootout", "system/\(PowerHelperConstants.daemonLabel)"])
+        }.value
     }
 
     nonisolated private static func simpleCall(_ action: @escaping (PowerHelperXPCProtocol, @escaping (Bool, String) -> Void) -> Void) async throws {
@@ -318,6 +299,14 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
                 } else {
                     done(nil, NSError(domain: "ControlPower.Helper", code: 2, userInfo: [NSLocalizedDescriptionKey: message]))
                 }
+            }
+        }
+    }
+
+    nonisolated private static func pingHelper(timeoutSeconds: TimeInterval) async throws -> Bool {
+        try await withConnection(timeoutSeconds: timeoutSeconds) { proxy, done in
+            proxy.ping { value in
+                done(value == "pong", nil)
             }
         }
     }
@@ -334,6 +323,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     nonisolated private static func withConnection<T: Sendable>(
+        timeoutSeconds: TimeInterval = Self.xpcTimeoutSeconds,
         _ block: @escaping (PowerHelperXPCProtocol, @escaping (T?, Error?) -> Void) -> Void
     ) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
@@ -363,12 +353,12 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             }
 
             let timeoutTask = Task {
-                try? await Task.sleep(for: .seconds(Self.xpcTimeoutSeconds))
+                try? await Task.sleep(for: .seconds(timeoutSeconds))
                 guard !Task.isCancelled else { return }
                 gate.finish(.failure(NSError(
                     domain: "ControlPower.Helper",
                     code: 7,
-                    userInfo: [NSLocalizedDescriptionKey: "Helper response timed out"]
+                    userInfo: [NSLocalizedDescriptionKey: "Helper response timed out after \(Int(timeoutSeconds.rounded())) seconds"]
                 )))
             }
             gate.installTimeoutTask(timeoutTask)

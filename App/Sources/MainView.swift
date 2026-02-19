@@ -1,4 +1,5 @@
 import ControlPowerCore
+import ServiceManagement
 import SwiftUI
 
 struct MainView: View {
@@ -111,6 +112,16 @@ struct MainView: View {
                     secondaryActions
                 }
                 .padding(.horizontal, 24)
+
+                if !viewModel.isHelperEnabled {
+                    helperApprovalBanner
+                        .padding(.horizontal, 24)
+                }
+
+                if viewModel.helperNeedsRepair {
+                    helperRepairBanner
+                        .padding(.horizontal, 24)
+                }
 
                 if let error = viewModel.lastError {
                     errorBanner(error)
@@ -397,6 +408,54 @@ struct MainView: View {
             Color(nsColor: .windowBackgroundColor)
             AnimatedTahoeBackground()
         }
+    }
+
+    private var helperApprovalBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.shield.fill")
+                .foregroundStyle(.yellow)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Helper Not Approved")
+                    .font(.caption.bold())
+                Text("Approve in System Settings to enable sleep control.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Open Settings") {
+                SMAppService.openSystemSettingsLoginItems()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(12)
+        .background(Color.yellow.opacity(0.1))
+        .cornerRadius(8)
+    }
+
+    private var helperRepairBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "wrench.trianglebadge.exclamationmark")
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Helper daemon needs repair")
+                    .font(.caption.bold())
+                Text("The background helper failed to start.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Repair") {
+                Task { await viewModel.repairDaemon() }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+            .controlSize(.small)
+            .disabled(viewModel.isBusy)
+        }
+        .padding(12)
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(8)
     }
 
     private func errorBanner(_ message: String) -> some View {

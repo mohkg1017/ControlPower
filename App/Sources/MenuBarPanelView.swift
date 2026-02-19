@@ -1,4 +1,5 @@
 import ControlPowerCore
+import ServiceManagement
 import SwiftUI
 
 struct MenuBarPanelView: View {
@@ -105,6 +106,45 @@ struct MenuBarPanelView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(viewModel.isBusy)
+            }
+
+            if !viewModel.isHelperEnabled {
+                HStack {
+                    Image(systemName: "exclamationmark.shield.fill")
+                        .foregroundStyle(.yellow)
+                    Text("Helper not approved")
+                        .font(.caption2)
+                    Spacer()
+                    Button("Approve") {
+                        SMAppService.openSystemSettingsLoginItems()
+                    }
+                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.yellow)
+                }
+                .padding(8)
+                .background(Color.yellow.opacity(0.05))
+                .cornerRadius(6)
+            }
+
+            if viewModel.helperNeedsRepair {
+                HStack {
+                    Image(systemName: "wrench.trianglebadge.exclamationmark")
+                        .foregroundStyle(.orange)
+                    Text("Helper needs repair")
+                        .font(.caption2)
+                    Spacer()
+                    Button("Repair") {
+                        Task { await viewModel.repairDaemon() }
+                    }
+                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                    .disabled(viewModel.isBusy)
+                }
+                .padding(8)
+                .background(Color.orange.opacity(0.05))
+                .cornerRadius(6)
             }
 
             if let error = viewModel.lastError {

@@ -7,28 +7,28 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		13BE122388A1FA12636183C9 /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EE3D0059B06EBE55889DEEE /* AppViewModel.swift */; };
 		17431CABD782A0CF04CFF33B /* ControlPowerCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = C3F9E37062B3EB7E2781BB7D /* ControlPowerCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		1AE5D021440A0F77B873F2BC /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB8B5C913093223197B05F7A /* MainView.swift */; };
-		20711DB70B7933F135511DFB /* PowerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 624CF9D66184F5CE10877F34 /* PowerModels.swift */; };
-		23B4BF0477EC34E9AAB1F7DB /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 907D05B6640E38587EC61113 /* main.swift */; };
-		2AE7A3F9D8A522A93F00C945 /* TimedProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C37FCB1E2C2F0DB5DE8507BF /* TimedProcessRunner.swift */; };
+		18AEA442F043DC801313EE5C /* TimedProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA70449A591DF349FFFB343E /* TimedProcessRunner.swift */; };
+		1A59E944B8274794A041394F /* MenuBarPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F534132BEC0146A3D375F2B /* MenuBarPanelView.swift */; };
+		21F8D96A19B4F5F817DCE82A /* PowerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89FEB7205A7BE8083580838F /* PowerModels.swift */; };
+		29E3236CAAF02ACBB98F07B5 /* PowerHelperXPCProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A9685F3170D8BDA92CEF69F /* PowerHelperXPCProtocol.swift */; };
 		35EDD54DB9267992A1EDF3C9 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9B19193CDBB8FE4FC08D737A /* PrivacyInfo.xcprivacy */; };
+		3B7B3A8800B1ED521C67A277 /* PowerDaemonClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA3CA6C003C147867421A6DC /* PowerDaemonClient.swift */; };
 		401E5B32E9CBD4F2F949053D /* ControlPowerCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = C3F9E37062B3EB7E2781BB7D /* ControlPowerCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		484F1DB8041DDB09B2D36B49 /* PowerDaemonClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 273A7C5673095C0C1A1FF70B /* PowerDaemonClient.swift */; };
+		469A3196AD1EC117750F14B8 /* TimedProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA70449A591DF349FFFB343E /* TimedProcessRunner.swift */; };
+		4B2ED42888E360822606E00C /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E581B73090FE7376C524BC66 /* AppViewModel.swift */; };
 		51E5294CF73A2D28D0847770 /* ControlPowerCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3F9E37062B3EB7E2781BB7D /* ControlPowerCore.framework */; };
 		5324BA70CD33FC41BD263AF1 /* ServiceManagement.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9EFEC6DE9BE3E22C6BA72568 /* ServiceManagement.framework */; };
-		6A4EBD4FECD67D3B5A0921CE /* HelperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9774F48955860549B53ADA04 /* HelperService.swift */; };
 		6F47554028CD76DF960DDF6D /* com.moe.controlpower.helper.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = A226D81853A36A42D4BE4192 /* com.moe.controlpower.helper.plist */; };
-		7A177553016CA69014B1332D /* MenuBarPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5BBB67192A324C0CBDBFC86 /* MenuBarPanelView.swift */; };
-		B2C0EC1B707281BDEBF4C2A5 /* ControlPowerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AFBE240430F2F545FE4DCB /* ControlPowerApp.swift */; };
+		7EA6999510CC3E4FB2EA1037 /* ControlPowerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F841A72B3332FF60B3550DA /* ControlPowerApp.swift */; };
+		8A5940DEC361A4D31B34D280 /* PowerHelperXPCProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A9685F3170D8BDA92CEF69F /* PowerHelperXPCProtocol.swift */; };
+		A248852818FC187C9336C356 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40866E50BC166BB7E65974EA /* MainView.swift */; };
 		B708EA29E2D585CE4769BBD9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E9F2F8A16095D686DD7679ED /* Assets.xcassets */; };
-		BA650522DE2235E165752097 /* PowerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 624CF9D66184F5CE10877F34 /* PowerModels.swift */; };
-		BE31626138A4C62C62F31255 /* TimedProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C37FCB1E2C2F0DB5DE8507BF /* TimedProcessRunner.swift */; };
 		C1F2C4C42227C93EA87C3DC0 /* PMSetParserSwiftTestingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC6240C06AB0E0F69156F044 /* PMSetParserSwiftTestingTests.swift */; };
-		C730912DF862DEA38828112A /* PowerHelperXPCProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9F0D7052F036B96CBA938E5 /* PowerHelperXPCProtocol.swift */; };
+		CA81F544345299AB6048379B /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A5181433813C33673C8E1A0 /* main.swift */; };
+		DCFF126A613FC9E115AC78AC /* PowerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89FEB7205A7BE8083580838F /* PowerModels.swift */; };
 		E69153DC6749C0CED930A6FD /* ControlPowerCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3F9E37062B3EB7E2781BB7D /* ControlPowerCore.framework */; };
-		F0CEE85A38E4A00D7B4DE35A /* PowerHelperXPCProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9F0D7052F036B96CBA938E5 /* PowerHelperXPCProtocol.swift */; };
+		E7A4A0D22E1931CAD2744400 /* HelperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 473E1A943CA64B7845D6B8CB /* HelperService.swift */; };
 		F4FAC69DD0E8329090495C09 /* ControlPowerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D54C5DB2B86EACC4549F571 /* ControlPowerTests.swift */; };
 		F5823FF55FAE5ED7F439D0D9 /* ServiceManagement.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9EFEC6DE9BE3E22C6BA72568 /* ServiceManagement.framework */; };
 /* End PBXBuildFile section */
@@ -94,26 +94,26 @@
 
 /* Begin PBXFileReference section */
 		1B5716BBCDF23760B8B7A1A6 /* ControlPowerHelper */ = {isa = PBXFileReference; includeInIndex = 0; path = ControlPowerHelper; sourceTree = BUILT_PRODUCTS_DIR; };
-		273A7C5673095C0C1A1FF70B /* PowerDaemonClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerDaemonClient.swift; sourceTree = "<group>"; };
-		2EE3D0059B06EBE55889DEEE /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
 		3B96B69A6A8ED82D60AA1F18 /* ControlPower.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ControlPower.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		40866E50BC166BB7E65974EA /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		473E1A943CA64B7845D6B8CB /* HelperService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperService.swift; sourceTree = "<group>"; };
 		4978AFBAC23984886014DA6B /* ControlPowerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ControlPowerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		624CF9D66184F5CE10877F34 /* PowerModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerModels.swift; sourceTree = "<group>"; };
+		7A9685F3170D8BDA92CEF69F /* PowerHelperXPCProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerHelperXPCProtocol.swift; sourceTree = "<group>"; };
+		7F534132BEC0146A3D375F2B /* MenuBarPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPanelView.swift; sourceTree = "<group>"; };
+		7F841A72B3332FF60B3550DA /* ControlPowerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPowerApp.swift; sourceTree = "<group>"; };
+		89FEB7205A7BE8083580838F /* PowerModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerModels.swift; sourceTree = "<group>"; };
 		8D54C5DB2B86EACC4549F571 /* ControlPowerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPowerTests.swift; sourceTree = "<group>"; };
-		907D05B6640E38587EC61113 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
-		9774F48955860549B53ADA04 /* HelperService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperService.swift; sourceTree = "<group>"; };
+		9A5181433813C33673C8E1A0 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		9B19193CDBB8FE4FC08D737A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		9EFEC6DE9BE3E22C6BA72568 /* ServiceManagement.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ServiceManagement.framework; path = System/Library/Frameworks/ServiceManagement.framework; sourceTree = SDKROOT; };
 		A226D81853A36A42D4BE4192 /* com.moe.controlpower.helper.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = com.moe.controlpower.helper.plist; sourceTree = "<group>"; };
-		C37FCB1E2C2F0DB5DE8507BF /* TimedProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimedProcessRunner.swift; sourceTree = "<group>"; };
 		C3F9E37062B3EB7E2781BB7D /* ControlPowerCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = ControlPowerCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		C5BBB67192A324C0CBDBFC86 /* MenuBarPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPanelView.swift; sourceTree = "<group>"; };
-		E9F0D7052F036B96CBA938E5 /* PowerHelperXPCProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerHelperXPCProtocol.swift; sourceTree = "<group>"; };
+		DA3CA6C003C147867421A6DC /* PowerDaemonClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerDaemonClient.swift; sourceTree = "<group>"; };
+		DA70449A591DF349FFFB343E /* TimedProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimedProcessRunner.swift; sourceTree = "<group>"; };
+		E581B73090FE7376C524BC66 /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
 		E9F2F8A16095D686DD7679ED /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		EC6240C06AB0E0F69156F044 /* PMSetParserSwiftTestingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PMSetParserSwiftTestingTests.swift; sourceTree = "<group>"; };
 		EE056CE8FF8C6FBA149D2217 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		F1AFBE240430F2F545FE4DCB /* ControlPowerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPowerApp.swift; sourceTree = "<group>"; };
-		FB8B5C913093223197B05F7A /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -145,6 +145,29 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		03641BE8694832423DC1C371 /* HelperSources */ = {
+			isa = PBXGroup;
+			children = (
+				473E1A943CA64B7845D6B8CB /* HelperService.swift */,
+				9A5181433813C33673C8E1A0 /* main.swift */,
+			);
+			name = HelperSources;
+			path = Helper/Sources;
+			sourceTree = "<group>";
+		};
+		1358C20370A0E0F8263D898F /* AppSources */ = {
+			isa = PBXGroup;
+			children = (
+				E581B73090FE7376C524BC66 /* AppViewModel.swift */,
+				7F841A72B3332FF60B3550DA /* ControlPowerApp.swift */,
+				40866E50BC166BB7E65974EA /* MainView.swift */,
+				7F534132BEC0146A3D375F2B /* MenuBarPanelView.swift */,
+				DA3CA6C003C147867421A6DC /* PowerDaemonClient.swift */,
+			);
+			name = AppSources;
+			path = App/Sources;
+			sourceTree = "<group>";
+		};
 		4228B483832E537AA7C583DB /* Resources */ = {
 			isa = PBXGroup;
 			children = (
@@ -176,48 +199,25 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		67BD948A1300A56EA777A4AC /* Sources */ = {
+		51601EBD5CA6ABE2EC55CA51 /* SharedSources */ = {
 			isa = PBXGroup;
 			children = (
-				9774F48955860549B53ADA04 /* HelperService.swift */,
-				907D05B6640E38587EC61113 /* main.swift */,
+				7A9685F3170D8BDA92CEF69F /* PowerHelperXPCProtocol.swift */,
+				89FEB7205A7BE8083580838F /* PowerModels.swift */,
+				DA70449A591DF349FFFB343E /* TimedProcessRunner.swift */,
 			);
-			name = Sources;
-			path = Helper/Sources;
-			sourceTree = "<group>";
-		};
-		A65C0620C14BC4C0DC9BB29D /* Sources */ = {
-			isa = PBXGroup;
-			children = (
-				E9F0D7052F036B96CBA938E5 /* PowerHelperXPCProtocol.swift */,
-				624CF9D66184F5CE10877F34 /* PowerModels.swift */,
-				C37FCB1E2C2F0DB5DE8507BF /* TimedProcessRunner.swift */,
-			);
-			name = Sources;
+			name = SharedSources;
 			path = Shared/Sources;
-			sourceTree = "<group>";
-		};
-		B6AC6E417E8A095856D744FA /* Sources */ = {
-			isa = PBXGroup;
-			children = (
-				2EE3D0059B06EBE55889DEEE /* AppViewModel.swift */,
-				F1AFBE240430F2F545FE4DCB /* ControlPowerApp.swift */,
-				FB8B5C913093223197B05F7A /* MainView.swift */,
-				C5BBB67192A324C0CBDBFC86 /* MenuBarPanelView.swift */,
-				273A7C5673095C0C1A1FF70B /* PowerDaemonClient.swift */,
-			);
-			name = Sources;
-			path = App/Sources;
 			sourceTree = "<group>";
 		};
 		D32F707D2D359E7B084BB86F = {
 			isa = PBXGroup;
 			children = (
+				1358C20370A0E0F8263D898F /* AppSources */,
+				03641BE8694832423DC1C371 /* HelperSources */,
 				F761F4E3D4C7274E412F28AE /* LaunchDaemons */,
 				4228B483832E537AA7C583DB /* Resources */,
-				B6AC6E417E8A095856D744FA /* Sources */,
-				67BD948A1300A56EA777A4AC /* Sources */,
-				A65C0620C14BC4C0DC9BB29D /* Sources */,
+				51601EBD5CA6ABE2EC55CA51 /* SharedSources */,
 				42EA4FDF5F3EC51350C21E89 /* Tests */,
 				FE1A31DC8402E4C3BAE52669 /* Frameworks */,
 				50DCD50500B323CBBD4EE4AF /* Products */,
@@ -332,15 +332,19 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					A46B809F0CBBD8B00C41631D = {
+						DevelopmentTeam = 45954WVVY3;
 						ProvisioningStyle = Automatic;
 					};
 					B9B5DE982B6F9CCF37E51AFA = {
+						DevelopmentTeam = 45954WVVY3;
 						ProvisioningStyle = Automatic;
 					};
 					BD0D041A79146E9E658ED928 = {
+						DevelopmentTeam = 45954WVVY3;
 						ProvisioningStyle = Automatic;
 					};
 					DDFA29E39BC6708898D3884F = {
+						DevelopmentTeam = 45954WVVY3;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -408,9 +412,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B2C0EC1B707281BDEBF4C2A5 /* ControlPowerApp.swift in Sources */,
-				1AE5D021440A0F77B873F2BC /* MainView.swift in Sources */,
-				7A177553016CA69014B1332D /* MenuBarPanelView.swift in Sources */,
+				7EA6999510CC3E4FB2EA1037 /* ControlPowerApp.swift in Sources */,
+				A248852818FC187C9336C356 /* MainView.swift in Sources */,
+				1A59E944B8274794A041394F /* MenuBarPanelView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -418,11 +422,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				13BE122388A1FA12636183C9 /* AppViewModel.swift in Sources */,
-				484F1DB8041DDB09B2D36B49 /* PowerDaemonClient.swift in Sources */,
-				F0CEE85A38E4A00D7B4DE35A /* PowerHelperXPCProtocol.swift in Sources */,
-				20711DB70B7933F135511DFB /* PowerModels.swift in Sources */,
-				BE31626138A4C62C62F31255 /* TimedProcessRunner.swift in Sources */,
+				4B2ED42888E360822606E00C /* AppViewModel.swift in Sources */,
+				3B7B3A8800B1ED521C67A277 /* PowerDaemonClient.swift in Sources */,
+				8A5940DEC361A4D31B34D280 /* PowerHelperXPCProtocol.swift in Sources */,
+				DCFF126A613FC9E115AC78AC /* PowerModels.swift in Sources */,
+				469A3196AD1EC117750F14B8 /* TimedProcessRunner.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -439,11 +443,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				6A4EBD4FECD67D3B5A0921CE /* HelperService.swift in Sources */,
-				C730912DF862DEA38828112A /* PowerHelperXPCProtocol.swift in Sources */,
-				BA650522DE2235E165752097 /* PowerModels.swift in Sources */,
-				2AE7A3F9D8A522A93F00C945 /* TimedProcessRunner.swift in Sources */,
-				23B4BF0477EC34E9AAB1F7DB /* main.swift in Sources */,
+				E7A4A0D22E1931CAD2744400 /* HelperService.swift in Sources */,
+				29E3236CAAF02ACBB98F07B5 /* PowerHelperXPCProtocol.swift in Sources */,
+				21F8D96A19B4F5F817DCE82A /* PowerModels.swift in Sources */,
+				18AEA442F043DC801313EE5C /* TimedProcessRunner.swift in Sources */,
+				CA81F544345299AB6048379B /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -693,6 +697,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 45954WVVY3;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -809,6 +814,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 45954WVVY3;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -878,6 +884,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 45954WVVY3;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
