@@ -22,16 +22,20 @@ private struct ControlPowerTestHostApp: App {
 }
 
 struct ControlPowerApp: App {
-    @State private var viewModel = AppViewModel()
+    @State private var viewModel: AppViewModel
     @Environment(\.openWindow) private var openWindow
+
+    @MainActor
+    init() {
+        let model = AppViewModel()
+        _viewModel = State(initialValue: model)
+        model.startup()
+    }
 
     var body: some Scene {
         WindowGroup("ControlPower", id: "main") {
             MainView(viewModel: viewModel)
                 .frame(minWidth: 700, minHeight: 460)
-                .task {
-                    viewModel.startup()
-                }
         }
         .defaultSize(width: 750, height: 500)
         .windowStyle(.hiddenTitleBar)

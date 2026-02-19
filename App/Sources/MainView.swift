@@ -9,6 +9,7 @@ struct MainView: View {
         case overview
         case settings
         case advanced
+        case about
     }
 
     var body: some View {
@@ -22,6 +23,9 @@ struct MainView: View {
                 }
                 NavigationLink(value: Tab.advanced) {
                     Label("Raw Status", systemImage: "terminal")
+                }
+                NavigationLink(value: Tab.about) {
+                    Label("About", systemImage: "info.circle")
                 }
             }
             .navigationTitle("ControlPower")
@@ -37,6 +41,8 @@ struct MainView: View {
                         settingsView
                     case .advanced:
                         advancedView
+                    case .about:
+                        aboutView
                     }
                 } else {
                     Text("Select an item")
@@ -45,6 +51,48 @@ struct MainView: View {
             }
             .transition(.opacity)
         }
+    }
+
+    private var aboutView: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 128, height: 128)
+                .shadow(radius: 10)
+            
+            VStack(spacing: 8) {
+                Text("ControlPower")
+                    .font(.largeTitle.bold())
+                
+                Text("Version 1.0 (Build 1)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Divider()
+                .frame(maxWidth: 200)
+            
+            VStack(spacing: 4) {
+                Text("Made By Moe")
+                    .font(.headline)
+                
+                Link("@mohkg1017", destination: URL(string: "https://x.com/mohkg1017")!)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.accentColor)
+            }
+            .padding(.top, 10)
+            
+            Spacer()
+            
+            Text("© 2026 Moe. All rights reserved.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .padding(.bottom, 20)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle("About")
     }
 
     private var overviewView: some View {
@@ -112,6 +160,7 @@ struct MainView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
         .navigationTitle("Settings")
     }
 
@@ -233,34 +282,99 @@ struct MainView: View {
     }
 
     private var advancedView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Current pmset -g Output")
-                .font(.headline)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Header with Info and Copy Action
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("System Power Configuration")
+                            .font(.headline)
+                        Text("Currently active pmset -g settings")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Button {
+                        let pasteboard = NSPasteboard.general
+                        pasteboard.clearContents()
+                        pasteboard.setString(viewModel.snapshot.summary, forType: .string)
+                    } label: {
+                        Label("Copy Output", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 24)
 
-            ScrollView {
-                Text(viewModel.snapshot.summary.isEmpty ? "No pmset output yet" : viewModel.snapshot.summary)
-                    .font(.system(.body, design: .monospaced))
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(nsColor: .textBackgroundColor).opacity(0.8))
-                    .cornerRadius(8)
-                    .textSelection(.enabled)
+                // The Terminal-Style Box
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Circle().fill(.red.opacity(0.6)).frame(width: 10, height: 10)
+                        Circle().fill(.orange.opacity(0.6)).frame(width: 10, height: 10)
+                        Circle().fill(.green.opacity(0.6)).frame(width: 10, height: 10)
+                        Spacer()
+                        Text("pmset -g")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.primary.opacity(0.05))
+                    
+                    Divider()
+
+                    Text(viewModel.snapshot.summary.isEmpty ? "No pmset output yet" : viewModel.snapshot.summary)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                )
+                .padding(.horizontal, 24)
+
+                // Context and Legend Section
+                GroupBox("Key Parameter Descriptions") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        parameterDesc(key: "SleepDisabled", desc: "If 1, system-wide sleep is inhibited.")
+                        parameterDesc(key: "lidwake", desc: "Wake the machine when the lid is opened.")
+                        parameterDesc(key: "standby", desc: "Machine will go into standby mode.")
+                        parameterDesc(key: "powernap", desc: "Periodic wake for background tasks.")
+                    }
+                    .padding(8)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 32)
             }
         }
-        .padding(24)
         .navigationTitle("Raw Status")
+    }
+
+    private func parameterDesc(key: String, desc: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(key)
+                .font(.system(.caption, design: .monospaced))
+                .fontWeight(.bold)
+                .frame(width: 110, alignment: .leading)
+                .foregroundStyle(Color.accentColor)
+            
+            Text(desc)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func tahoeBackground(activeTab: Tab?) -> some View {
         ZStack {
             Color(nsColor: .windowBackgroundColor)
-            if activeTab == .overview {
-                AnimatedTahoeBackground()
-            } else {
-                StaticMeshLayer()
-                    .ignoresSafeArea()
-                    .blur(radius: 40)
-            }
+            AnimatedTahoeBackground()
         }
     }
 
@@ -309,11 +423,19 @@ extension PowerStatusTint {
 }
 
 private struct AnimatedTahoeBackground: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1.0 / 12.0)) { context in
-            AnimatedMeshLayer(phase: context.date.timeIntervalSinceReferenceDate)
+        if reduceMotion || scenePhase != .active {
+            StaticMeshLayer()
+                .allowsHitTesting(false)
+        } else {
+            TimelineView(.periodic(from: .now, by: 1.0 / 6.0)) { context in
+                AnimatedMeshLayer(phase: context.date.timeIntervalSinceReferenceDate)
+            }
+            .allowsHitTesting(false)
         }
-        .allowsHitTesting(false)
     }
 }
 
@@ -350,5 +472,7 @@ private struct StaticMeshLayer: View {
             .blue.opacity(0.05), .accentColor.opacity(0.15), .blue.opacity(0.1),
             .purple.opacity(0.05), .blue.opacity(0.05), .accentColor.opacity(0.1)
         ])
+        .ignoresSafeArea()
+        .blur(radius: 40)
     }
 }

@@ -306,6 +306,70 @@ final class ControlPowerTests: XCTestCase {
         XCTAssertFalse(result.success)
         XCTAssertTrue(result.timedOut)
     }
+
+    func testClientAuthorizationPolicyRejectsMismatchedBundleIdentifier() {
+        let policy = ClientAuthorizationPolicy(bundleIdentifier: "com.moe.controlpower", teamIdentifier: "TEAM123")
+
+        XCTAssertFalse(policy.isAuthorizedClient(bundleIdentifier: "com.other.app", teamIdentifier: "TEAM123"))
+    }
+
+    func testClientAuthorizationPolicyRequiresTeamIdentifierWhenConfigured() {
+        let policy = ClientAuthorizationPolicy(bundleIdentifier: "com.moe.controlpower", teamIdentifier: "TEAM123")
+
+        XCTAssertTrue(policy.isAuthorizedClient(bundleIdentifier: "com.moe.controlpower", teamIdentifier: "TEAM123"))
+        XCTAssertFalse(policy.isAuthorizedClient(bundleIdentifier: "com.moe.controlpower", teamIdentifier: "TEAM999"))
+        XCTAssertFalse(policy.isAuthorizedClient(bundleIdentifier: "com.moe.controlpower", teamIdentifier: nil))
+    }
+
+    func testClientAuthorizationPolicyRejectsClientWhenTeamIdentifierUnavailable() {
+        let policy = ClientAuthorizationPolicy(bundleIdentifier: "com.moe.controlpower", teamIdentifier: nil)
+
+        XCTAssertFalse(policy.isAuthorizedClient(bundleIdentifier: "com.moe.controlpower", teamIdentifier: nil))
+        XCTAssertFalse(policy.isAuthorizedClient(bundleIdentifier: "com.moe.controlpower", teamIdentifier: "TEAM123"))
+    }
+
+    func testXPCReplyGateCancelsInstalledTimeoutTask() async throws {
+        let value = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int, Error>) in
+            let gate = XPCReplyGate(continuation: continuation) {}
+            let timeoutTask = Task<Void, Never> {
+                try? await Task.sleep(for: .seconds(5))
+            }
+
+            gate.installTimeoutTask(timeoutTask)
+            gate.finish(.success(42))
+
+            XCTAssertTrue(timeoutTask.isCancelled)
+        }
+
+        XCTAssertEqual(value, 42)
+    }
+
+    func testXPCReplyGateResumesContinuationOnlyOnce() async throws {
+        let value = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int, Error>) in
+            let gate = XPCReplyGate(continuation: continuation) {}
+
+            gate.finish(.success(1))
+            gate.finish(.success(2))
+        }
+
+        XCTAssertEqual(value, 1)
+    }
+
+    @MainActor
+    func testTimerNegativeMinutesClampsToZeroAndDisablesNoSleepWhenActive() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client)
+        viewModel.snapshot = PMSetSnapshot(disableSleep: true, lidWake: true, summary: "awake")
+
+        viewModel.startTimer(minutes: -5)
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+        await Task.yield()
+
+        XCTAssertEqual(viewModel.selectedDurationMinutes, 0)
+        XCTAssertNil(viewModel.remainingSeconds)
+        XCTAssertEqual(client.lastDisableSleepValue, false)
+    }
 }
 
 private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {

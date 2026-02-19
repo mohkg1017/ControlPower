@@ -13,11 +13,23 @@ APP_NAME="ControlPower"
 VERSION="${1:-1.0.0}"
 BUILD="${2:-1}"
 TEST_CONFIGURATION="${TEST_CONFIGURATION:-Debug}"
+TEST_DESTINATION="${TEST_DESTINATION:-platform=macOS,arch=$(uname -m)}"
 
 if [[ -z "${DEVELOPER_ID_APP:-}" ]]; then
   echo "error: DEVELOPER_ID_APP is required for release builds"
   echo "error: export DEVELOPER_ID_APP='Developer ID Application: ...'"
   exit 1
+fi
+
+if [[ "$DEVELOPER_ID_APP" == "Developer ID Application: ..." ]]; then
+  echo "error: DEVELOPER_ID_APP is still set to the placeholder value."
+  echo "error: set it to your real signing identity first."
+  exit 1
+fi
+
+if [[ "${NOTARY_PROFILE:-}" == "your-notary-profile" ]]; then
+  echo "warning: NOTARY_PROFILE is set to placeholder value; skipping notarization."
+  unset NOTARY_PROFILE
 fi
 
 if [[ -f "$ROOT_DIR/project.yml" ]]; then
@@ -32,13 +44,25 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$ARCHIVES" "$EXPORT_DIR"
 
 if [[ "${SKIP_TESTS:-0}" != "1" ]]; then
-  xcodebuild \
-    -project "$PROJECT" \
-    -scheme "$SCHEME" \
-    -configuration "$TEST_CONFIGURATION" \
-    -derivedDataPath "$DERIVED" \
-    -destination "platform=macOS" \
-    test
+  for attempt in 1 2; do
+    if xcodebuild \
+      -project "$PROJECT" \
+      -scheme "$SCHEME" \
+      -configuration "$TEST_CONFIGURATION" \
+      -derivedDataPath "$DERIVED" \
+      -destination "$TEST_DESTINATION" \
+      test; then
+      break
+    fi
+
+    if [[ "$attempt" -eq 2 ]]; then
+      echo "error: tests failed after retry."
+      exit 1
+    fi
+
+    echo "warning: tests failed on first attempt; retrying once."
+    rm -rf "$DERIVED/Logs/Test"
+  done
 fi
 
 xcodebuild \

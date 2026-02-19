@@ -159,8 +159,9 @@ public final class AppViewModel {
 
     public func startTimer(minutes: Int) {
         cancelTimer()
-        selectedDurationMinutes = minutes
-        remainingSeconds = minutes * 60
+        let normalizedMinutes = max(0, minutes)
+        selectedDurationMinutes = normalizedMinutes
+        remainingSeconds = normalizedMinutes * 60
 
         // Ensure No Sleep is ON
         if snapshot.disableSleep != true {

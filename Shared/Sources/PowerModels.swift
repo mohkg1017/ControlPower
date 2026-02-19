@@ -7,6 +7,26 @@ public enum PowerHelperConstants {
     public static let machServiceName = "com.moe.controlpower.helper.mach"
 }
 
+public struct ClientAuthorizationPolicy: Sendable {
+    public let bundleIdentifier: String
+    public let teamIdentifier: String?
+
+    public init(bundleIdentifier: String, teamIdentifier: String?) {
+        self.bundleIdentifier = bundleIdentifier
+        self.teamIdentifier = teamIdentifier
+    }
+
+    public func isAuthorizedClient(bundleIdentifier: String, teamIdentifier: String?) -> Bool {
+        guard bundleIdentifier == self.bundleIdentifier else {
+            return false
+        }
+        guard let expectedTeamIdentifier = self.teamIdentifier else {
+            return false
+        }
+        return teamIdentifier == expectedTeamIdentifier
+    }
+}
+
 public struct PMSetSnapshot: Equatable, Sendable {
     public var disableSleep: Bool?
     public var lidWake: Bool?

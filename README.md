@@ -32,6 +32,46 @@ scripts/install_to_applications.sh
 
 The installer now stages the new app and backs up any existing `/Applications/ControlPower.app` before replacing it.
 
+Install with a custom name (for distribution/testing side-by-side):
+
+```bash
+scripts/install_to_applications.sh --target /Applications/MoeRelease.app
+```
+
+Or use the shortcut wrapper:
+
+```bash
+scripts/install_moe_release.sh
+```
+
+`scripts/install_moe_release.sh` only installs/renames the built app in `/Applications`; it does not create a signed release package.
+
+## One-Click Release Builder App
+
+Install a launcher app that opens Terminal and runs the signed release pipeline (`scripts/release.sh`):
+
+```bash
+scripts/install_controlpower_release_app.sh
+```
+
+This installs `/Applications/ControlPowerRelease.app`.
+
+On first install, it creates `~/.controlpower-release.env`. Fill it with your signing values:
+
+```bash
+DEVELOPER_ID_APP='Developer ID Application: Your Name (TEAMID)'
+# Optional for notarization:
+# NOTARY_PROFILE='your-notary-profile'
+```
+
+Then launch `ControlPowerRelease.app` from Applications and follow prompts for version/build.
+
+Tip: list valid signing identities with:
+
+```bash
+security find-identity -v -p codesigning | grep "Developer ID Application"
+```
+
 ## Notes
 
 - LaunchDaemon plist is bundled at `Contents/Library/LaunchDaemons/com.moe.controlpower.helper.plist`.

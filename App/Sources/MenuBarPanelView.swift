@@ -68,9 +68,11 @@ struct MenuBarPanelView: View {
 
                 Spacer()
 
-                Toggle("", isOn: disableSleepBinding)
-                .toggleStyle(.switch)
-                .disabled(viewModel.isBusy)
+                Toggle("Prevent System Sleep", isOn: disableSleepBinding)
+                    .labelsHidden()
+                    .accessibilityLabel("Prevent System Sleep")
+                    .toggleStyle(.switch)
+                    .disabled(viewModel.isBusy)
             }
 
             if let error = viewModel.lastError {

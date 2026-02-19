@@ -2,16 +2,10 @@ import Foundation
 import Security
 
 private struct AuthorizedClientIdentity {
-    let bundleIdentifier: String
-    let teamIdentifier: String
-
-    static func load() -> AuthorizedClientIdentity? {
-        guard let teamIdentifier = helperTeamIdentifier() else {
-            return nil
-        }
-        return AuthorizedClientIdentity(
+    static func loadPolicy() -> ClientAuthorizationPolicy {
+        ClientAuthorizationPolicy(
             bundleIdentifier: authorizedBundleIdentifier(),
-            teamIdentifier: teamIdentifier
+            teamIdentifier: helperTeamIdentifier()
         )
     }
 
@@ -50,7 +44,7 @@ private struct AuthorizedClientIdentity {
         return signingIdentity.teamIdentifier
     }
 
-    static func signingIdentity(for staticCode: SecStaticCode) -> (identifier: String, teamIdentifier: String)? {
+    static func signingIdentity(for staticCode: SecStaticCode) -> (identifier: String, teamIdentifier: String?)? {
         var signingInfo: CFDictionary?
         let infoStatus = SecCodeCopySigningInformation(
             staticCode,
@@ -59,10 +53,10 @@ private struct AuthorizedClientIdentity {
         )
         guard infoStatus == errSecSuccess,
               let signingInfo = signingInfo as? [String: Any],
-              let signingIdentifier = signingInfo[kSecCodeInfoIdentifier as String] as? String,
-              let teamIdentifier = signingInfo[kSecCodeInfoTeamIdentifier as String] as? String else {
+              let signingIdentifier = signingInfo[kSecCodeInfoIdentifier as String] as? String else {
             return nil
         }
+        let teamIdentifier = signingInfo[kSecCodeInfoTeamIdentifier as String] as? String
         return (signingIdentifier, teamIdentifier)
     }
 }
@@ -70,7 +64,7 @@ private struct AuthorizedClientIdentity {
 @MainActor
 final class HelperListenerDelegate: NSObject, @preconcurrency NSXPCListenerDelegate {
     private let service = HelperService()
-    private let authorizedClient = AuthorizedClientIdentity.load()
+    private let authorizationPolicy = AuthorizedClientIdentity.loadPolicy()
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
         guard isAuthorizedClient(newConnection) else {
@@ -83,10 +77,6 @@ final class HelperListenerDelegate: NSObject, @preconcurrency NSXPCListenerDeleg
     }
 
     private func isAuthorizedClient(_ connection: NSXPCConnection) -> Bool {
-        guard let authorizedClient else {
-            return true  // ad-hoc signing: no team ID available, allow connection
-        }
-
         var guestCode: SecCode?
         let attributes = [kSecGuestAttributePid as String: NSNumber(value: connection.processIdentifier)] as CFDictionary
         let copyStatus = SecCodeCopyGuestWithAttributes(nil, attributes, SecCSFlags(), &guestCode)
@@ -109,8 +99,10 @@ final class HelperListenerDelegate: NSObject, @preconcurrency NSXPCListenerDeleg
             return false
         }
 
-        return signingIdentity.identifier == authorizedClient.bundleIdentifier &&
-            signingIdentity.teamIdentifier == authorizedClient.teamIdentifier
+        return authorizationPolicy.isAuthorizedClient(
+            bundleIdentifier: signingIdentity.identifier,
+            teamIdentifier: signingIdentity.teamIdentifier
+        )
     }
 }
 
