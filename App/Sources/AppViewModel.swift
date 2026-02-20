@@ -116,6 +116,7 @@ public final class AppViewModel {
     private var pendingMutations: [() async -> Void] = []
     private var pendingMutationIndex = 0
     private var isProcessingMutations = false
+    private var lowBatteryAutoDisableQueued = false
     private var hasStarted = false
 
     @MainActor
@@ -209,10 +210,7 @@ public final class AppViewModel {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let client = self.client
-                try await Task.detached(priority: .utility) {
-                    try client.registerDaemonIfNeeded()
-                }.value
+                try self.client.registerDaemonIfNeeded()
             } catch {
                 self.lastError = error.controlPowerSanitizedDescription
             }
@@ -262,7 +260,12 @@ public final class AppViewModel {
     }
 
     public func toggleHelper() {
-        let target = !isHelperEnabled
+        setHelperEnabled(!isHelperEnabled)
+    }
+
+    public func setHelperEnabled(_ enabled: Bool) {
+        guard enabled != isHelperEnabled else { return }
+        let target = enabled
         do {
             try client.setHelperEnabled(target)
             isHelperEnabled = client.isHelperEnabled()
@@ -278,7 +281,11 @@ public final class AppViewModel {
     }
 
     public func toggleDisableSleep() {
-        setDisableSleep(!(snapshot.disableSleep ?? false))
+        setDisableSleepEnabled(!(snapshot.disableSleep ?? false))
+    }
+
+    public func setDisableSleepEnabled(_ enabled: Bool) {
+        setDisableSleep(enabled)
     }
 
     public func startTimer(minutes: Int) {
@@ -430,24 +437,37 @@ public final class AppViewModel {
     }
 
     private func checkBatterySafety() {
-        if isLowBatteryProtectionEnabled && batteryLevel <= 20 && snapshot.disableSleep == true {
-            lastError = "Low battery (≤20%). Disabling 'No Sleep' to save power."
-            setDisableSleep(false)
+        guard isLowBatteryProtectionEnabled && batteryLevel <= 20 && snapshot.disableSleep == true else {
+            lowBatteryAutoDisableQueued = false
+            return
         }
+        guard !lowBatteryAutoDisableQueued else { return }
+        lowBatteryAutoDisableQueued = true
+        lastError = "Low battery (≤20%). Disabling 'No Sleep' to save power."
+        setDisableSleepEnabled(false)
     }
 
     private func finishTimerIfNeeded() {
         let shouldDisableNoSleep = snapshot.disableSleep == true
         remainingSeconds = nil
         guard shouldDisableNoSleep else { return }
-        setDisableSleep(false)
+        setDisableSleepEnabled(false)
     }
 
     private func setDisableSleep(_ enabled: Bool) {
+        if let currentValue = snapshot.disableSleep, currentValue == enabled {
+            return
+        }
         if !enabled {
             cancelTimer()
         }
+        let shouldClearLowBatteryGuard = !enabled
         enqueueOperation("Set disablesleep to \(enabled ? "1" : "0")") { viewModel in
+            defer {
+                if shouldClearLowBatteryGuard {
+                    viewModel.lowBatteryAutoDisableQueued = false
+                }
+            }
             try await viewModel.client.setDisableSleep(enabled)
             try await viewModel.refreshSnapshotFromClient()
         }

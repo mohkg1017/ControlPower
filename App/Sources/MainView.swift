@@ -4,9 +4,10 @@ import SwiftUI
 
 struct MainView: View {
     @Bindable var viewModel: AppViewModel
+    @SceneStorage("controlpower.selectedTab") private var selectedTabStorage: String = Tab.overview.rawValue
     @State private var selectedTab: Tab? = .overview
 
-    enum Tab: Hashable {
+    enum Tab: String, Hashable {
         case overview
         case settings
         case advanced
@@ -51,6 +52,12 @@ struct MainView: View {
                 }
             }
             .transition(.opacity)
+        }
+        .onAppear {
+            selectedTab = Tab(rawValue: selectedTabStorage) ?? .overview
+        }
+        .onChange(of: selectedTab) { _, newValue in
+            selectedTabStorage = (newValue ?? .overview).rawValue
         }
     }
 
@@ -474,7 +481,7 @@ struct MainView: View {
     private var helperEnabledBinding: Binding<Bool> {
         Binding(
             get: { viewModel.isHelperEnabled },
-            set: { _ in viewModel.toggleHelper() }
+            set: { viewModel.setHelperEnabled($0) }
         )
     }
 
@@ -496,11 +503,11 @@ private struct AnimatedTahoeBackground: View {
     @Environment(\.controlActiveState) private var controlActiveState
 
     var body: some View {
-        if reduceMotion || scenePhase != .active || controlActiveState != .key {
+        if reduceMotion || ProcessInfo.processInfo.isLowPowerModeEnabled || scenePhase != .active || controlActiveState != .key {
             StaticMeshLayer()
                 .allowsHitTesting(false)
         } else {
-            TimelineView(.periodic(from: .now, by: 0.5)) { context in
+            TimelineView(.periodic(from: .now, by: 1.0)) { context in
                 AnimatedMeshLayer(phase: context.date.timeIntervalSinceReferenceDate)
             }
             .allowsHitTesting(false)
@@ -525,7 +532,7 @@ private struct AnimatedMeshLayer: View {
             .init(0, 1), .init(0.5, 1), .init(1, 1)
         ], colors: Self.colors)
         .ignoresSafeArea()
-        .blur(radius: 40)
+        .blur(radius: 28)
     }
 }
 
@@ -544,6 +551,6 @@ private struct StaticMeshLayer: View {
     var body: some View {
         MeshGradient(width: 3, height: 3, points: Self.points, colors: Self.colors)
         .ignoresSafeArea()
-        .blur(radius: 40)
+        .blur(radius: 28)
     }
 }

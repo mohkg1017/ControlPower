@@ -31,6 +31,36 @@ public protocol PowerDaemonClientProtocol: Sendable {
     func repairDaemon() async throws
 }
 
+private struct LocalPMSetSnapshotCacheState {
+    var snapshot: PMSetSnapshot?
+    var fetchedAt: Date?
+}
+
+private struct XPCConnectionCancellationState<T: Sendable> {
+    var gate: XPCReplyGate<T>?
+}
+
+private final class XPCConnectionCancellationBox<T: Sendable>: Sendable {
+    private let state = Mutex(XPCConnectionCancellationState<T>(gate: nil))
+
+    func install(_ gate: XPCReplyGate<T>) {
+        state.withLock { $0.gate = gate }
+    }
+
+    func clear() {
+        state.withLock { $0.gate = nil }
+    }
+
+    func cancel() {
+        let gate = state.withLock { state -> XPCReplyGate<T>? in
+            let gate = state.gate
+            state.gate = nil
+            return gate
+        }
+        gate?.finish(.failure(CancellationError()))
+    }
+}
+
 public struct PowerDaemonClient: PowerDaemonClientProtocol {
     nonisolated private static let pmsetURL = URL(fileURLWithPath: "/usr/bin/pmset")
     nonisolated private static let launchctlURL = URL(fileURLWithPath: "/bin/launchctl")
@@ -38,7 +68,9 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     nonisolated private static let xpcProbeTimeoutSeconds: TimeInterval = 5
     nonisolated private static let localPMSetTimeoutSeconds: TimeInterval = 8
     nonisolated private static let registrationProbeTimeoutSeconds: TimeInterval = 3
+    nonisolated private static let localSnapshotCacheTTLSeconds: TimeInterval = 1.5
     nonisolated private static let pmsetValidationError = SystemExecutableValidator.validateExecutable(at: pmsetURL)
+    nonisolated private static let localSnapshotCache = Mutex(LocalPMSetSnapshotCacheState(snapshot: nil, fetchedAt: nil))
 
     public init() {}
 
@@ -81,14 +113,19 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     public func isDaemonBroken() async -> Bool {
         let service = daemonService
         guard service.status == .enabled else { return false }
-        return await Task.detached(priority: .utility) {
+        let task = Task.detached(priority: .utility) {
             let result = TimedProcessRunner(
                 executableURL: Self.launchctlURL,
                 timeoutSeconds: Self.registrationProbeTimeoutSeconds
             ).run(arguments: ["print", "system/\(PowerHelperConstants.daemonLabel)"])
             guard result.success else { return false }
             return result.output.contains("spawn failed") || result.output.contains("EX_CONFIG")
-        }.value
+        }
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     public func repairDaemon() async throws {
@@ -102,9 +139,14 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     public func fetchStatus() async throws -> PowerHelperStatus {
         let service = daemonService
         if service.status != .enabled {
-            let snapshot = try await Task.detached(priority: .userInitiated) {
+            let task = Task.detached(priority: .userInitiated) {
                 try Self.fetchLocalPMSetSnapshot()
-            }.value
+            }
+            let snapshot = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
             return PowerHelperStatus(
                 snapshot: snapshot,
                 source: .localFallback,
@@ -115,9 +157,14 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         do {
             return try await Self.fetchStatusFromHelper()
         } catch {
-            let snapshot = try await Task.detached(priority: .userInitiated) {
+            let task = Task.detached(priority: .userInitiated) {
                 try Self.fetchLocalPMSetSnapshot()
-            }.value
+            }
+            let snapshot = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
             return PowerHelperStatus(
                 snapshot: snapshot,
                 source: .localFallback,
@@ -155,10 +202,15 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
                 userInfo: [NSLocalizedDescriptionKey: pmsetValidationError]
             )
         }
-        let result = await Task.detached(priority: .userInitiated) {
+        let task = Task.detached(priority: .userInitiated) {
             TimedProcessRunner(executableURL: Self.pmsetURL, timeoutSeconds: Self.localPMSetTimeoutSeconds)
                 .run(arguments: ["displaysleepnow"])
-        }.value
+        }
+        let result = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
         guard result.success else {
             throw NSError(
                 domain: "ControlPower.LocalPMSet",
@@ -212,6 +264,19 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             )
         }
 
+        if let cachedSnapshot = localSnapshotCache.withLock({ cache -> PMSetSnapshot? in
+            guard
+                let snapshot = cache.snapshot,
+                let fetchedAt = cache.fetchedAt,
+                Date().timeIntervalSince(fetchedAt) <= localSnapshotCacheTTLSeconds
+            else {
+                return nil
+            }
+            return snapshot
+        }) {
+            return cachedSnapshot
+        }
+
         let result = TimedProcessRunner(executableURL: pmsetURL, timeoutSeconds: localPMSetTimeoutSeconds)
             .run(arguments: ["-g"])
         guard result.success else {
@@ -229,7 +294,12 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
                 userInfo: [NSLocalizedDescriptionKey: output]
             )
         }
-        return PMSetParser.parse(result.output)
+        let snapshot = PMSetParser.parse(result.output)
+        localSnapshotCache.withLock { cache in
+            cache.snapshot = snapshot
+            cache.fetchedAt = Date()
+        }
+        return snapshot
     }
 
     private func daemonStatusDescription(_ status: SMAppService.Status) -> String {
@@ -253,12 +323,17 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     nonisolated private func bootoutDaemon() async {
-        _ = await Task.detached(priority: .utility) {
+        let task = Task.detached(priority: .utility) {
             TimedProcessRunner(
                 executableURL: Self.launchctlURL,
                 timeoutSeconds: Self.registrationProbeTimeoutSeconds
             ).run(arguments: ["bootout", "system/\(PowerHelperConstants.daemonLabel)"])
-        }.value
+        }
+        _ = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     nonisolated private static func simpleCall(_ action: @escaping (PowerHelperXPCProtocol, @escaping (Bool, String) -> Void) -> Void) async throws {
@@ -285,68 +360,77 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         timeoutSeconds: TimeInterval = Self.xpcTimeoutSeconds,
         _ block: @escaping (PowerHelperXPCProtocol, @escaping (T?, Error?) -> Void) -> Void
     ) async throws -> T {
-        try await withCheckedThrowingContinuation { continuation in
-            let connection = NSXPCConnection(machServiceName: PowerHelperConstants.machServiceName, options: .privileged)
-            connection.remoteObjectInterface = NSXPCInterface(with: PowerHelperXPCProtocol.self)
-            let gate = XPCReplyGate(continuation: continuation)
-
-            connection.interruptionHandler = {
-                gate.finish(.failure(NSError(
-                    domain: "ControlPower.Helper",
-                    code: 5,
-                    userInfo: [NSLocalizedDescriptionKey: "Helper connection interrupted"]
-                )))
-            }
-            connection.invalidationHandler = {
-                gate.finish(.failure(NSError(
-                    domain: "ControlPower.Helper",
-                    code: 6,
-                    userInfo: [NSLocalizedDescriptionKey: "Helper connection invalidated"]
-                )))
-            }
-
-            let timeoutTask = Task {
-                try? await Task.sleep(for: .seconds(timeoutSeconds))
-                guard !Task.isCancelled else { return }
-                gate.finish(.failure(NSError(
-                    domain: "ControlPower.Helper",
-                    code: 7,
-                    userInfo: [NSLocalizedDescriptionKey: "Helper response timed out after \(Int(timeoutSeconds.rounded())) seconds"]
-                )))
-            }
-            gate.installTimeoutTask(timeoutTask)
-
-            connection.resume()
-
-            guard let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
-                connection.invalidate()
-                gate.finish(.failure(error))
-            }) as? PowerHelperXPCProtocol else {
-                connection.invalidate()
-                gate.finish(.failure(NSError(
-                    domain: "ControlPower.Helper",
-                    code: 3,
-                    userInfo: [NSLocalizedDescriptionKey: "Remote proxy unavailable"]
-                )))
-                return
-            }
-
-            block(proxy) { value, error in
-                connection.invalidate()
-                if let error {
-                    gate.finish(.failure(error))
-                    return
+        let cancellationBox = XPCConnectionCancellationBox<T>()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let connection = NSXPCConnection(machServiceName: PowerHelperConstants.machServiceName, options: .privileged)
+                connection.remoteObjectInterface = NSXPCInterface(with: PowerHelperXPCProtocol.self)
+                let gate = XPCReplyGate(continuation: continuation)
+                let finish: (Result<T, Error>) -> Void = { result in
+                    connection.invalidate()
+                    cancellationBox.clear()
+                    gate.finish(result)
                 }
-                guard let value else {
+                cancellationBox.install(gate)
+
+                connection.interruptionHandler = {
+                    finish(.failure(NSError(
+                        domain: "ControlPower.Helper",
+                        code: 5,
+                        userInfo: [NSLocalizedDescriptionKey: "Helper connection interrupted"]
+                    )))
+                }
+                connection.invalidationHandler = {
+                    finish(.failure(NSError(
+                        domain: "ControlPower.Helper",
+                        code: 6,
+                        userInfo: [NSLocalizedDescriptionKey: "Helper connection invalidated"]
+                    )))
+                }
+
+                let timeoutTask = Task {
+                    try? await Task.sleep(for: .seconds(timeoutSeconds))
+                    guard !Task.isCancelled else { return }
+                    cancellationBox.clear()
                     gate.finish(.failure(NSError(
                         domain: "ControlPower.Helper",
-                        code: 4,
-                        userInfo: [NSLocalizedDescriptionKey: "Missing response payload"]
+                        code: 7,
+                        userInfo: [NSLocalizedDescriptionKey: "Helper response timed out after \(Int(timeoutSeconds.rounded())) seconds"]
+                    )))
+                }
+                gate.installTimeoutTask(timeoutTask)
+
+                connection.resume()
+
+                guard let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
+                    finish(.failure(error))
+                }) as? PowerHelperXPCProtocol else {
+                    finish(.failure(NSError(
+                        domain: "ControlPower.Helper",
+                        code: 3,
+                        userInfo: [NSLocalizedDescriptionKey: "Remote proxy unavailable"]
                     )))
                     return
                 }
-                gate.finish(.success(value))
+
+                block(proxy) { value, error in
+                    if let error {
+                        finish(.failure(error))
+                        return
+                    }
+                    guard let value else {
+                        finish(.failure(NSError(
+                            domain: "ControlPower.Helper",
+                            code: 4,
+                            userInfo: [NSLocalizedDescriptionKey: "Missing response payload"]
+                        )))
+                        return
+                    }
+                    finish(.success(value))
+                }
             }
+        } onCancel: {
+            cancellationBox.cancel()
         }
     }
 }

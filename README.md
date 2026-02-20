@@ -72,10 +72,16 @@ Tip: list valid signing identities with:
 security find-identity -v -p codesigning | grep "Developer ID Application"
 ```
 
-`ControlPowerRelease.app` skips tests by default to avoid intermittent `xctest` bundle failures in scripted runs. To include tests, launch it from Terminal with:
+`ControlPowerRelease.app` runs tests by default. To skip tests intentionally, launch it from Terminal with:
 
 ```bash
-RUN_TESTS=1 scripts/run_release_from_launcher.sh
+SKIP_TESTS=1 scripts/run_release_from_launcher.sh
+```
+
+Notarization is required by default. To intentionally build a non-notarized DMG, set:
+
+```bash
+ALLOW_UNNOTARIZED_RELEASE=1 scripts/run_release_from_launcher.sh
 ```
 
 ## Xcode Agent Self-Heal (Codex + Claude)

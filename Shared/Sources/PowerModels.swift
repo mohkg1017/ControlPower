@@ -81,6 +81,8 @@ public enum PMSetParser {
 }
 
 enum SystemExecutableValidator {
+    private static let pmsetRequirementString = "anchor apple and identifier \"com.apple.pmset\""
+
     static func validateExecutable(at url: URL) -> String? {
         do {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isExecutableKey, .isSymbolicLinkKey])
@@ -103,7 +105,13 @@ enum SystemExecutableValidator {
             return "Failed to load pmset code signature (\(createStatus))"
         }
 
-        let validateStatus = SecStaticCodeCheckValidity(staticCode, SecCSFlags(), nil)
+        var requirement: SecRequirement?
+        let requirementStatus = SecRequirementCreateWithString(pmsetRequirementString as CFString, SecCSFlags(), &requirement)
+        guard requirementStatus == errSecSuccess, let requirement else {
+            return "Failed to build pmset code requirement (\(requirementStatus))"
+        }
+
+        let validateStatus = SecStaticCodeCheckValidity(staticCode, SecCSFlags(), requirement)
         guard validateStatus == errSecSuccess else {
             let message = (SecCopyErrorMessageString(validateStatus, nil) as String?) ?? "unknown signature error"
             return "pmset signature validation failed: \(message)"

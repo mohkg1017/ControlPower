@@ -59,11 +59,51 @@ private struct AuthorizedClientIdentity {
         let teamIdentifier = signingInfo[kSecCodeInfoTeamIdentifier as String] as? String
         return (signingIdentifier, teamIdentifier)
     }
+
+    static func requirement(for policy: ClientAuthorizationPolicy) -> SecRequirement? {
+        guard let teamIdentifier = policy.teamIdentifier else {
+            return nil
+        }
+
+        let requirementString = """
+        anchor apple generic and identifier "\(escapeRequirementLiteral(policy.bundleIdentifier))" and certificate leaf[subject.OU] = "\(escapeRequirementLiteral(teamIdentifier))"
+        """
+        var requirement: SecRequirement?
+        let status = SecRequirementCreateWithString(requirementString as CFString, SecCSFlags(), &requirement)
+        guard status == errSecSuccess, let requirement else {
+            return nil
+        }
+        return requirement
+    }
+
+    static func guestCode(for connection: NSXPCConnection) -> SecCode? {
+        let pidAttributes = [kSecGuestAttributePid as String: NSNumber(value: connection.processIdentifier)] as CFDictionary
+        var guestCode: SecCode?
+        let pidStatus = SecCodeCopyGuestWithAttributes(nil, pidAttributes, SecCSFlags(), &guestCode)
+        guard pidStatus == errSecSuccess else {
+            return nil
+        }
+        return guestCode
+    }
+
+    private static func escapeRequirementLiteral(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
 }
 
 final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate {
     private let service = HelperService()
-    private let authorizationPolicy = AuthorizedClientIdentity.loadPolicy()
+    private let authorizationPolicy: ClientAuthorizationPolicy
+    private let authorizationRequirement: SecRequirement?
+
+    override init() {
+        let policy = AuthorizedClientIdentity.loadPolicy()
+        self.authorizationPolicy = policy
+        self.authorizationRequirement = AuthorizedClientIdentity.requirement(for: policy)
+        super.init()
+    }
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
         guard isAuthorizedClient(newConnection) else {
@@ -76,14 +116,14 @@ final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate {
     }
 
     private func isAuthorizedClient(_ connection: NSXPCConnection) -> Bool {
-        var guestCode: SecCode?
-        let attributes = [kSecGuestAttributePid as String: NSNumber(value: connection.processIdentifier)] as CFDictionary
-        let copyStatus = SecCodeCopyGuestWithAttributes(nil, attributes, SecCSFlags(), &guestCode)
-        guard copyStatus == errSecSuccess, let guestCode else {
+        guard
+            let guestCode = AuthorizedClientIdentity.guestCode(for: connection),
+            let authorizationRequirement
+        else {
             return false
         }
 
-        let validityStatus = SecCodeCheckValidity(guestCode, SecCSFlags(), nil)
+        let validityStatus = SecCodeCheckValidity(guestCode, SecCSFlags(), authorizationRequirement)
         guard validityStatus == errSecSuccess else {
             return false
         }

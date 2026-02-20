@@ -106,7 +106,9 @@ nonisolated final class ControlPowerTests: XCTestCase {
         await client.waitForMutationCallCount(1)
         await client.waitForFetchStatusCallCount(2)
         await client.waitForIdleMutations()
-        await Task.yield()
+        await waitForCondition {
+            client.lastDisableSleepValue == true && viewModel.snapshot.summary == "after-toggle"
+        }
 
         XCTAssertEqual(client.lastDisableSleepValue, true)
         XCTAssertEqual(viewModel.snapshot.disableSleep, true)
@@ -124,9 +126,7 @@ nonisolated final class ControlPowerTests: XCTestCase {
         viewModel.restoreDefaults()
         await client.waitForMutationCallCount(1)
         await client.waitForIdleMutations()
-        for _ in 0..<20 where viewModel.lastError == nil {
-            await Task.yield()
-        }
+        await waitForCondition { viewModel.lastError != nil }
 
         XCTAssertEqual(client.restoreDefaultsCallCount, 1)
         XCTAssertEqual(viewModel.lastError, "Restore defaults failed: restore failed")
@@ -211,11 +211,23 @@ nonisolated final class ControlPowerTests: XCTestCase {
         let viewModel = AppViewModel(client: client)
         viewModel.toggleHelper()
         await client.waitForFetchStatusCallCount(1)
-        await Task.yield()
+        await waitForCondition { viewModel.snapshot.summary == "after-toggle-helper" }
 
         XCTAssertEqual(client.fetchStatusCallCount, 1)
         XCTAssertEqual(viewModel.isHelperEnabled, false)
         XCTAssertEqual(viewModel.snapshot.summary, "after-toggle-helper")
+        XCTAssertNil(viewModel.lastError)
+    }
+
+    @MainActor
+    func testSetHelperEnabledNoOpWhenStateUnchanged() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client)
+
+        viewModel.setHelperEnabled(true)
+
+        XCTAssertEqual(client.fetchStatusCallCount, 0)
+        XCTAssertEqual(viewModel.isHelperEnabled, true)
         XCTAssertNil(viewModel.lastError)
     }
 
@@ -226,7 +238,6 @@ nonisolated final class ControlPowerTests: XCTestCase {
 
         let viewModel = AppViewModel(client: client)
         viewModel.toggleHelper()
-        await Task.yield()
 
         XCTAssertEqual(client.fetchStatusCallCount, 0)
         XCTAssertEqual(viewModel.isHelperEnabled, true)
@@ -238,7 +249,6 @@ nonisolated final class ControlPowerTests: XCTestCase {
         let client = FakePowerDaemonClient()
         let viewModel = AppViewModel(client: client, isTestEnvironment: true)
         viewModel.startup()
-        await Task.yield()
 
         XCTAssertEqual(client.registerDaemonCallCount, 0)
         XCTAssertEqual(client.fetchStatusCallCount, 0)
@@ -257,14 +267,13 @@ nonisolated final class ControlPowerTests: XCTestCase {
         let viewModel = AppViewModel(client: client, isTestEnvironment: false)
         viewModel.startup()
         await client.waitForFetchStatusCallCount(1)
-        await Task.yield()
+        await waitForCondition { viewModel.snapshot.summary == "startup" }
 
         XCTAssertEqual(client.registerDaemonCallCount, 1)
         XCTAssertEqual(client.fetchStatusCallCount, 1)
         XCTAssertEqual(viewModel.snapshot.summary, "startup")
 
         viewModel.startup()
-        await Task.yield()
         XCTAssertEqual(client.registerDaemonCallCount, 1)
         XCTAssertEqual(client.fetchStatusCallCount, 1)
     }
@@ -285,7 +294,7 @@ nonisolated final class ControlPowerTests: XCTestCase {
         let viewModel = AppViewModel(client: client, isTestEnvironment: false)
         viewModel.startup()
         await client.waitForFetchStatusCallCount(1)
-        await Task.yield()
+        await waitForCondition { viewModel.snapshot.summary == "after-failed-register" }
 
         XCTAssertEqual(client.registerDaemonCallCount, 1)
         XCTAssertEqual(client.fetchStatusCallCount, 1)
@@ -307,7 +316,6 @@ nonisolated final class ControlPowerTests: XCTestCase {
         XCTAssertEqual(viewModel.lastError, "approval required")
 
         client.resumeHeldFetchStatus()
-        await Task.yield()
     }
 
     @MainActor
@@ -319,7 +327,6 @@ nonisolated final class ControlPowerTests: XCTestCase {
         viewModel.startTimer(minutes: 0)
         await client.waitForMutationCallCount(1)
         await client.waitForIdleMutations()
-        await Task.yield()
 
         XCTAssertEqual(client.lastDisableSleepValue, false)
         XCTAssertNil(viewModel.remainingSeconds)
@@ -407,7 +414,6 @@ nonisolated final class ControlPowerTests: XCTestCase {
         viewModel.startTimer(minutes: -5)
         await client.waitForMutationCallCount(1)
         await client.waitForIdleMutations()
-        await Task.yield()
 
         XCTAssertEqual(viewModel.selectedDurationMinutes, 0)
         XCTAssertNil(viewModel.remainingSeconds)
@@ -440,6 +446,22 @@ nonisolated final class ControlPowerTests: XCTestCase {
         await client.waitForRepairCallCount(1)
 
         XCTAssertEqual(client.repairDaemonCallCount, 1)
+    }
+
+    @MainActor
+    private func waitForCondition(
+        timeoutNanoseconds: UInt64 = 1_000_000_000,
+        condition: @escaping @MainActor () -> Bool
+    ) async {
+        let interval: UInt64 = 10_000_000
+        var elapsed: UInt64 = 0
+        while elapsed <= timeoutNanoseconds {
+            if condition() {
+                return
+            }
+            try? await Task.sleep(nanoseconds: interval)
+            elapsed += interval
+        }
     }
 }
 

@@ -32,6 +32,12 @@ if [[ "${NOTARY_PROFILE:-}" == "your-notary-profile" ]]; then
   unset NOTARY_PROFILE
 fi
 
+if [[ -z "${NOTARY_PROFILE:-}" && "${ALLOW_UNNOTARIZED_RELEASE:-0}" != "1" ]]; then
+  echo "error: NOTARY_PROFILE is required for release builds."
+  echo "error: set ALLOW_UNNOTARIZED_RELEASE=1 only when you intentionally want a non-notarized build."
+  exit 1
+fi
+
 if [[ -f "$ROOT_DIR/project.yml" ]]; then
   if command -v xcodegen >/dev/null 2>&1; then
     xcodegen generate --spec "$ROOT_DIR/project.yml"
@@ -44,25 +50,15 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$ARCHIVES" "$EXPORT_DIR"
 
 if [[ "${SKIP_TESTS:-0}" != "1" ]]; then
-  for attempt in 1 2; do
-    if xcodebuild \
-      -project "$PROJECT" \
-      -scheme "$SCHEME" \
-      -configuration "$TEST_CONFIGURATION" \
-      -derivedDataPath "$DERIVED" \
-      -destination "$TEST_DESTINATION" \
-      test; then
-      break
-    fi
-
-    if [[ "$attempt" -eq 2 ]]; then
-      echo "error: tests failed after retry."
-      exit 1
-    fi
-
-    echo "warning: tests failed on first attempt; retrying once."
-    rm -rf "$DERIVED/Logs/Test"
-  done
+  xcodebuild \
+    -project "$PROJECT" \
+    -scheme "$SCHEME" \
+    -configuration "$TEST_CONFIGURATION" \
+    -derivedDataPath "$DERIVED" \
+    -destination "$TEST_DESTINATION" \
+    test
+else
+  echo "warning: SKIP_TESTS=1 set; proceeding without running tests."
 fi
 
 xcodebuild \
@@ -170,7 +166,7 @@ if [[ -n "${NOTARY_PROFILE:-}" ]]; then
 
   xcrun stapler staple "$DMG_PATH"
 else
-  echo "warning: NOTARY_PROFILE not set; skipping notarization and stapling"
+  echo "warning: ALLOW_UNNOTARIZED_RELEASE=1 set; skipping notarization and stapling"
 fi
 
 echo "DMG ready: $DMG_PATH"

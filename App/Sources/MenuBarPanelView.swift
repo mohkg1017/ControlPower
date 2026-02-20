@@ -210,7 +210,7 @@ struct MenuBarPanelView: View {
     private var disableSleepBinding: Binding<Bool> {
         Binding(
             get: { viewModel.snapshot.disableSleep ?? false },
-            set: { _ in viewModel.toggleDisableSleep() }
+            set: { viewModel.setDisableSleepEnabled($0) }
         )
     }
 }

@@ -157,8 +157,13 @@ schemes:
       config: Debug
     test:
       config: Debug
+      gatherCoverageData: true
+      coverageTargets:
+        - ControlPower
+        - ControlPowerCore
       targets:
-        - ControlPowerTests
+        - name: ControlPowerTests
+          parallelizable: true
     archive:
       config: Release
   ControlPowerProfiling:
@@ -169,8 +174,13 @@ schemes:
       config: Profiling
     test:
       config: Debug
+      gatherCoverageData: true
+      coverageTargets:
+        - ControlPower
+        - ControlPowerCore
       targets:
-        - ControlPowerTests
+        - name: ControlPowerTests
+          parallelizable: true
     archive:
       config: Release
   ControlPowerCoreTests:
@@ -179,5 +189,9 @@ schemes:
         ControlPowerCore: all
     test:
       config: Debug
+      gatherCoverageData: true
+      coverageTargets:
+        - ControlPowerCore
       targets:
-        - ControlPowerTests
+        - name: ControlPowerTests
+          parallelizable: true
