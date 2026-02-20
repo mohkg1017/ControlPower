@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import SystemConfiguration
 
 private struct AuthorizedClientIdentity {
     static func loadPolicy() -> ClientAuthorizationPolicy {
@@ -26,22 +27,7 @@ private struct AuthorizedClientIdentity {
     }
 
     private static func helperTeamIdentifier() -> String? {
-        var selfCode: SecCode?
-        let selfStatus = SecCodeCopySelf(SecCSFlags(), &selfCode)
-        guard selfStatus == errSecSuccess, let selfCode else {
-            return nil
-        }
-
-        var staticCode: SecStaticCode?
-        let staticStatus = SecCodeCopyStaticCode(selfCode, SecCSFlags(), &staticCode)
-        guard staticStatus == errSecSuccess, let staticCode else {
-            return nil
-        }
-
-        guard let signingIdentity = signingIdentity(for: staticCode) else {
-            return nil
-        }
-        return signingIdentity.teamIdentifier
+        ProcessSigningIdentity.currentTeamIdentifier()
     }
 
     static func signingIdentity(for staticCode: SecStaticCode) -> (identifier: String, teamIdentifier: String?)? {
@@ -68,6 +54,18 @@ private struct AuthorizedClientIdentity {
     }
 }
 
+private func currentConsoleUserIdentifier() -> uid_t? {
+    var userIdentifier: uid_t = 0
+    var groupIdentifier: gid_t = 0
+    guard let username = SCDynamicStoreCopyConsoleUser(nil, &userIdentifier, &groupIdentifier) as String? else {
+        return nil
+    }
+    guard !username.isEmpty, username != "loginwindow" else {
+        return nil
+    }
+    return userIdentifier
+}
+
 final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate {
     private let service = HelperService()
     private let authorizationRequirementString: String?
@@ -90,6 +88,19 @@ final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate {
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
         guard authorizationRequirementString != nil else {
             return false
+        }
+        guard let consoleUserIdentifier = currentConsoleUserIdentifier() else {
+            return false
+        }
+        guard newConnection.effectiveUserIdentifier == consoleUserIdentifier else {
+            return false
+        }
+        let connectionIdentifier = ObjectIdentifier(newConnection)
+        newConnection.invalidationHandler = { [weak self] in
+            self?.service.clearSessionToken(for: connectionIdentifier)
+        }
+        newConnection.interruptionHandler = { [weak self] in
+            self?.service.clearSessionToken(for: connectionIdentifier)
         }
         newConnection.exportedInterface = NSXPCInterface(with: PowerHelperXPCProtocol.self)
         newConnection.exportedObject = service

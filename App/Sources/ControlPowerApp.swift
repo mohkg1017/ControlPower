@@ -87,5 +87,9 @@ struct ControlPowerApp: App {
             }
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            ControlPowerSettingsView(viewModel: viewModel)
+        }
     }
 }

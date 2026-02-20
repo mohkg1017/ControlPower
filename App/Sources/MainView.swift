@@ -5,7 +5,6 @@ import SwiftUI
 struct MainView: View {
     @Bindable var viewModel: AppViewModel
     @SceneStorage("controlpower.selectedTab") private var selectedTabStorage: String = Tab.overview.rawValue
-    @State private var selectedTab: Tab? = .overview
 
     enum Tab: String, Hashable {
         case overview
@@ -16,7 +15,7 @@ struct MainView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $selectedTab) {
+            List(selection: selectedTabBinding) {
                 NavigationLink(value: Tab.overview) {
                     Label("Overview", systemImage: "bolt.shield")
                 }
@@ -34,30 +33,19 @@ struct MainView: View {
         } detail: {
             ZStack {
                 tahoeBackground
-                
-                if let selectedTab {
-                    switch selectedTab {
-                    case .overview:
-                        overviewView
-                    case .settings:
-                        settingsView
-                    case .advanced:
-                        advancedView
-                    case .about:
-                        aboutView
-                    }
-                } else {
-                    Text("Select an item")
-                        .foregroundStyle(.secondary)
+
+                switch selectedTab {
+                case .overview:
+                    overviewView
+                case .settings:
+                    settingsView
+                case .advanced:
+                    advancedView
+                case .about:
+                    aboutView
                 }
             }
             .transition(.opacity)
-        }
-        .onAppear {
-            selectedTab = Tab(rawValue: selectedTabStorage) ?? .overview
-        }
-        .onChange(of: selectedTab) { _, newValue in
-            selectedTabStorage = (newValue ?? .overview).rawValue
         }
     }
 
@@ -74,7 +62,7 @@ struct MainView: View {
                 Text("ControlPower")
                     .font(.largeTitle.bold())
                 
-                Text("Version 1.0 (Build 1)")
+                Text(appVersionText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -411,7 +399,9 @@ struct MainView: View {
     private var tahoeBackground: some View {
         ZStack {
             Color(nsColor: .windowBackgroundColor)
-            AnimatedTahoeBackground()
+            if selectedTab == .overview {
+                AnimatedTahoeBackground()
+            }
         }
     }
 
@@ -485,6 +475,23 @@ struct MainView: View {
         )
     }
 
+    private var selectedTab: Tab {
+        Tab(rawValue: selectedTabStorage) ?? .overview
+    }
+
+    private var selectedTabBinding: Binding<Tab?> {
+        Binding(
+            get: { selectedTab },
+            set: { selectedTabStorage = ($0 ?? .overview).rawValue }
+        )
+    }
+
+    private var appVersionText: String {
+        let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let buildNumber = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        return "Version \(shortVersion) (Build \(buildNumber))"
+    }
+
 }
 
 extension PowerStatusTint {
@@ -507,7 +514,7 @@ private struct AnimatedTahoeBackground: View {
             StaticMeshLayer()
                 .allowsHitTesting(false)
         } else {
-            TimelineView(.periodic(from: .now, by: 1.0)) { context in
+            TimelineView(.periodic(from: .now, by: 3.0)) { context in
                 AnimatedMeshLayer(phase: context.date.timeIntervalSinceReferenceDate)
             }
             .allowsHitTesting(false)
@@ -524,15 +531,15 @@ private struct AnimatedMeshLayer: View {
     ]
 
     var body: some View {
-        let x = Float(0.5 + (sin(phase * 0.5) * 0.3))
-        let y = Float(0.5 + (cos(phase * 0.4) * 0.3))
+        let x = Float(0.5 + (sin(phase * 0.35) * 0.18))
+        let y = Float(0.5 + (cos(phase * 0.3) * 0.18))
         MeshGradient(width: 3, height: 3, points: [
             .init(0, 0), .init(0.5, 0), .init(1, 0),
             .init(0, 0.5), .init(x, y), .init(1, 0.5),
             .init(0, 1), .init(0.5, 1), .init(1, 1)
         ], colors: Self.colors)
         .ignoresSafeArea()
-        .blur(radius: 28)
+        .blur(radius: 16)
     }
 }
 
@@ -551,6 +558,6 @@ private struct StaticMeshLayer: View {
     var body: some View {
         MeshGradient(width: 3, height: 3, points: Self.points, colors: Self.colors)
         .ignoresSafeArea()
-        .blur(radius: 28)
+        .blur(radius: 14)
     }
 }

@@ -232,16 +232,127 @@ nonisolated final class ControlPowerTests: XCTestCase {
     }
 
     @MainActor
+    func testSetHelperEnabledProcessesLatestQueuedIntent() async {
+        let client = FakePowerDaemonClient()
+        client.holdFetchStatus = true
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "queued-intent"),
+                source: .helper
+            )
+        )
+
+        let viewModel = AppViewModel(client: client)
+        viewModel.setHelperEnabled(false)
+        await client.waitForSetHelperEnabledCallCount(1)
+
+        viewModel.setHelperEnabled(true)
+        client.holdFetchStatus = false
+        client.resumeHeldFetchStatus()
+
+        await client.waitForSetHelperEnabledCallCount(2)
+        await client.waitForIdleMutations()
+
+        XCTAssertTrue(client.helperEnabled)
+        XCTAssertTrue(viewModel.isHelperEnabled)
+        XCTAssertNil(viewModel.lastError)
+    }
+
+    @MainActor
+    func testToggleHelperRefreshFailureSurfacesRefreshErrorAndKeepsStateConsistent() async {
+        let client = FakePowerDaemonClient()
+        client.fetchStatusResult = .failure(
+            NSError(domain: "Test", code: 2, userInfo: [NSLocalizedDescriptionKey: "fetch failed"])
+        )
+
+        let viewModel = AppViewModel(client: client)
+        viewModel.helperNeedsRepair = true
+        viewModel.toggleHelper()
+        await waitForCondition { viewModel.lastError != nil }
+
+        XCTAssertEqual(client.setHelperEnabledCallCount, 1)
+        XCTAssertEqual(client.fetchStatusCallCount, 1)
+        XCTAssertFalse(viewModel.isHelperEnabled)
+        XCTAssertFalse(viewModel.helperNeedsRepair)
+        XCTAssertEqual(viewModel.lastError, "Helper was disabled, but status refresh failed: fetch failed")
+    }
+
+    @MainActor
     func testToggleHelperFailureSurfacesErrorAndSkipsRefresh() async {
         let client = FakePowerDaemonClient()
         client.setHelperEnabledShouldFail = true
 
         let viewModel = AppViewModel(client: client)
         viewModel.toggleHelper()
+        await waitForCondition { viewModel.lastError != nil }
 
         XCTAssertEqual(client.fetchStatusCallCount, 0)
         XCTAssertEqual(viewModel.isHelperEnabled, true)
         XCTAssertEqual(viewModel.lastError, "Failed to disable helper: approval missing")
+    }
+
+    @MainActor
+    func testSetHelperEnabledKeepsLatestQueuedIntent() async {
+        let client = FakePowerDaemonClient()
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "queued-helper-update"),
+                source: .helper
+            )
+        )
+        client.holdFetchStatus = true
+
+        let viewModel = AppViewModel(client: client)
+        viewModel.setHelperEnabled(false)
+        await client.waitForFetchStatusCallCount(1)
+
+        viewModel.setHelperEnabled(true)
+
+        client.resumeHeldFetchStatus()
+        await client.waitForFetchStatusCallCount(2)
+        client.resumeHeldFetchStatus()
+        await waitForCondition { viewModel.isHelperEnabled == true && client.helperEnabled == true }
+
+        XCTAssertEqual(client.fetchStatusCallCount, 2)
+        XCTAssertTrue(viewModel.isHelperEnabled)
+        XCTAssertTrue(client.helperEnabled)
+        XCTAssertNil(viewModel.lastError)
+    }
+
+    @MainActor
+    func testToggleHelperRefreshFailureReportsRefreshSpecificError() async {
+        let client = FakePowerDaemonClient()
+        client.fetchStatusResult = .failure(
+            NSError(domain: "Test", code: 22, userInfo: [NSLocalizedDescriptionKey: "status fetch failed"])
+        )
+
+        let viewModel = AppViewModel(client: client)
+        viewModel.toggleHelper()
+        await waitForCondition { viewModel.lastError != nil && viewModel.isHelperEnabled == false }
+
+        XCTAssertEqual(
+            viewModel.lastError,
+            "Helper was disabled, but status refresh failed: status fetch failed"
+        )
+        XCTAssertFalse(viewModel.isHelperEnabled)
+        XCTAssertFalse(client.helperEnabled)
+    }
+
+    @MainActor
+    func testToggleHelperRefreshFailureRecomputesHelperRepairState() async {
+        let client = FakePowerDaemonClient()
+        client.fetchStatusResult = .failure(
+            NSError(domain: "Test", code: 23, userInfo: [NSLocalizedDescriptionKey: "refresh failed"])
+        )
+
+        let viewModel = AppViewModel(client: client)
+        viewModel.statusSource = .localFallback
+        viewModel.helperNeedsRepair = true
+
+        viewModel.toggleHelper()
+        await waitForCondition { viewModel.lastError != nil && viewModel.isHelperEnabled == false }
+
+        XCTAssertFalse(viewModel.helperNeedsRepair)
     }
 
     @MainActor
@@ -345,6 +456,58 @@ nonisolated final class ControlPowerTests: XCTestCase {
         let result = runner.run(arguments: ["2"])
         XCTAssertFalse(result.success)
         XCTAssertTrue(result.timedOut)
+    }
+
+    func testTimedProcessRunnerCancelsProcess() async {
+        let runner = TimedProcessRunner(executableURL: URL(fileURLWithPath: "/bin/sleep"), timeoutSeconds: 10)
+        let cancellation = TimedProcessCancellation()
+
+        let task = Task.detached(priority: .utility) {
+            runner.run(arguments: ["5"], cancellation: cancellation)
+        }
+        try? await Task.sleep(for: .milliseconds(150))
+        cancellation.cancel()
+
+        let result = await task.value
+        XCTAssertFalse(result.success)
+        XCTAssertFalse(result.timedOut)
+        XCTAssertEqual(result.output, "Command cancelled")
+    }
+
+    func testHelperExecutablePathParsesPathField() {
+        let output = """
+        system/com.moe.controlpower.helper = {
+            path = /Applications/ControlPower.app/Contents/Resources/ControlPowerHelper
+        }
+        """
+
+        XCTAssertEqual(
+            PowerDaemonClient.helperExecutablePath(fromLaunchctlOutput: output),
+            "/Applications/ControlPower.app/Contents/Resources/ControlPowerHelper"
+        )
+    }
+
+    func testHelperExecutablePathFallsBackToProgramField() {
+        let output = """
+        system/com.moe.controlpower.helper = {
+            program = /Library/PrivilegedHelperTools/ControlPowerHelper
+        }
+        """
+
+        XCTAssertEqual(
+            PowerDaemonClient.helperExecutablePath(fromLaunchctlOutput: output),
+            "/Library/PrivilegedHelperTools/ControlPowerHelper"
+        )
+    }
+
+    func testHelperExecutablePathRejectsNonAbsolutePaths() {
+        let output = """
+        system/com.moe.controlpower.helper = {
+            path = ControlPowerHelper
+        }
+        """
+
+        XCTAssertNil(PowerDaemonClient.helperExecutablePath(fromLaunchctlOutput: output))
     }
 
     func testClientAuthorizationPolicyRejectsMismatchedBundleIdentifier() {
@@ -481,6 +644,12 @@ nonisolated final class ControlPowerTests: XCTestCase {
     func testRepairDaemonClearsHelperNeedsRepair() async {
         let client = FakePowerDaemonClient()
         client.daemonBroken = true
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "repaired"),
+                source: .helper
+            )
+        )
 
         let viewModel = AppViewModel(client: client)
         viewModel.helperNeedsRepair = true
@@ -491,6 +660,27 @@ nonisolated final class ControlPowerTests: XCTestCase {
         XCTAssertFalse(viewModel.helperNeedsRepair)
         XCTAssertNil(viewModel.lastError)
         XCTAssertEqual(client.repairDaemonCallCount, 1)
+    }
+
+    @MainActor
+    func testRepairDaemonRefreshesSnapshotAfterRepair() async {
+        let client = FakePowerDaemonClient()
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: false, summary: "after-repair"),
+                source: .helper
+            )
+        )
+
+        let viewModel = AppViewModel(client: client)
+        viewModel.snapshot = PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "before-repair")
+
+        await viewModel.repairDaemon()
+
+        XCTAssertEqual(client.repairDaemonCallCount, 1)
+        XCTAssertEqual(client.fetchStatusCallCount, 1)
+        XCTAssertEqual(viewModel.snapshot.summary, "after-repair")
+        XCTAssertEqual(viewModel.statusSource, .helper)
     }
 
     @MainActor
@@ -538,6 +728,7 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
         var daemonBroken = false
         var registerDaemonCallCount = 0
         var fetchStatusCallCount = 0
+        var setHelperEnabledCallCount = 0
         var setDisableSleepCallCount = 0
         var restoreDefaultsCallCount = 0
         var repairDaemonCallCount = 0
@@ -545,6 +736,7 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
         var lastDisableSleepValue: Bool?
         var activeMutationCalls = 0
         var fetchStatusCountWait: (expected: Int, continuation: CheckedContinuation<Void, Never>)?
+        var setHelperEnabledCountWait: (expected: Int, continuation: CheckedContinuation<Void, Never>)?
         var mutationCountWait: (expected: Int, continuation: CheckedContinuation<Void, Never>)?
         var repairCountWait: (expected: Int, continuation: CheckedContinuation<Void, Never>)?
         var idleMutationWait: CheckedContinuation<Void, Never>?
@@ -588,6 +780,7 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
     }
 
     var fetchStatusCallCount: Int { state.withLock { $0.fetchStatusCallCount } }
+    var setHelperEnabledCallCount: Int { state.withLock { $0.setHelperEnabledCallCount } }
     var registerDaemonCallCount: Int { state.withLock { $0.registerDaemonCallCount } }
     var setDisableSleepCallCount: Int { state.withLock { $0.setDisableSleepCallCount } }
     var restoreDefaultsCallCount: Int { state.withLock { $0.restoreDefaultsCallCount } }
@@ -600,7 +793,7 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
         set { state.withLock { $0.daemonBroken = newValue } }
     }
 
-    func registerDaemonIfNeeded() throws {
+    func registerDaemonIfNeeded() async throws {
         let result = state.withLock { state in
             state.registerDaemonCallCount += 1
             return state.registerDaemonResult
@@ -612,8 +805,20 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
         state.withLock { $0.helperEnabled }
     }
 
-    func setHelperEnabled(_ enabled: Bool) throws {
-        let shouldFail = state.withLock { $0.setHelperEnabledShouldFail }
+    func setHelperEnabled(_ enabled: Bool) async throws {
+        let (shouldFail, waitContinuation) = state.withLock { state -> (Bool, CheckedContinuation<Void, Never>?) in
+            state.setHelperEnabledCallCount += 1
+            let waitContinuation: CheckedContinuation<Void, Never>?
+            if let wait = state.setHelperEnabledCountWait, state.setHelperEnabledCallCount >= wait.expected {
+                state.setHelperEnabledCountWait = nil
+                waitContinuation = wait.continuation
+            } else {
+                waitContinuation = nil
+            }
+            return (state.setHelperEnabledShouldFail, waitContinuation)
+        }
+        waitContinuation?.resume()
+
         if shouldFail {
             throw FakePowerDaemonClientError.approvalMissing
         }
@@ -685,6 +890,25 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
                     return true
                 }
                 state.mutationCountWait = (expected, continuation)
+                return false
+            }
+            if shouldResumeNow {
+                continuation.resume()
+            }
+        }
+    }
+
+    @MainActor
+    func waitForSetHelperEnabledCallCount(_ expected: Int) async {
+        if state.withLock({ $0.setHelperEnabledCallCount >= expected }) {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            let shouldResumeNow = state.withLock { state in
+                if state.setHelperEnabledCallCount >= expected {
+                    return true
+                }
+                state.setHelperEnabledCountWait = (expected, continuation)
                 return false
             }
             if shouldResumeNow {

@@ -27,30 +27,30 @@ public final class AppViewModel {
     }
 
     private struct ClientOperations: Sendable {
-        private let registerDaemonIfNeededOperation: @Sendable () throws -> Void
+        private let registerDaemonIfNeededOperation: @Sendable () async throws -> Void
         private let fetchStatusOperation: @Sendable () async throws -> PowerHelperStatus
         private let setDisableSleepOperation: @Sendable (Bool) async throws -> Void
         private let restoreDefaultsOperation: @Sendable () async throws -> Void
         private let displaySleepNowOperation: @Sendable () async throws -> Void
         private let isHelperEnabledOperation: @Sendable () -> Bool
-        private let setHelperEnabledOperation: @Sendable (Bool) throws -> Void
+        private let setHelperEnabledOperation: @Sendable (Bool) async throws -> Void
         private let isDaemonBrokenOperation: @Sendable () async -> Bool
         private let repairDaemonOperation: @Sendable () async throws -> Void
 
         init<Client: PowerDaemonClientProtocol>(_ client: Client) {
-            registerDaemonIfNeededOperation = { try client.registerDaemonIfNeeded() }
+            registerDaemonIfNeededOperation = { try await client.registerDaemonIfNeeded() }
             fetchStatusOperation = { try await client.fetchStatus() }
             setDisableSleepOperation = { enabled in try await client.setDisableSleep(enabled) }
             restoreDefaultsOperation = { try await client.restoreDefaults() }
             displaySleepNowOperation = { try await client.displaySleepNow() }
             isHelperEnabledOperation = { client.isHelperEnabled() }
-            setHelperEnabledOperation = { enabled in try client.setHelperEnabled(enabled) }
+            setHelperEnabledOperation = { enabled in try await client.setHelperEnabled(enabled) }
             isDaemonBrokenOperation = { await client.isDaemonBroken() }
             repairDaemonOperation = { try await client.repairDaemon() }
         }
 
-        func registerDaemonIfNeeded() throws {
-            try registerDaemonIfNeededOperation()
+        func registerDaemonIfNeeded() async throws {
+            try await registerDaemonIfNeededOperation()
         }
 
         func fetchStatus() async throws -> PowerHelperStatus {
@@ -73,8 +73,8 @@ public final class AppViewModel {
             isHelperEnabledOperation()
         }
 
-        func setHelperEnabled(_ enabled: Bool) throws {
-            try setHelperEnabledOperation(enabled)
+        func setHelperEnabled(_ enabled: Bool) async throws {
+            try await setHelperEnabledOperation(enabled)
         }
 
         func isDaemonBroken() async -> Bool {
@@ -99,6 +99,7 @@ public final class AppViewModel {
     public var remainingSeconds: Int?
     public var selectedDurationMinutes: Int = 60
     private var timerTask: Task<Void, Never>?
+    private var timerEndDate: Date?
 
     public var batteryLevel: Int = 100
     public var isLowBatteryProtectionEnabled: Bool = true {
@@ -111,12 +112,11 @@ public final class AppViewModel {
     private var batteryMonitorContextPointer: UnsafeMutableRawPointer?
 
     private let client: ClientOperations
+    private let mutationScheduler: MutationScheduler
     private let isTestEnvironment: Bool
     private let shouldPersistLowBatteryProtection: Bool
-    private var pendingMutations: [() async -> Void] = []
-    private var pendingMutationIndex = 0
-    private var isProcessingMutations = false
     private var lowBatteryAutoDisableQueued = false
+    private var pendingHelperEnabledRequest: Bool?
     private var hasStarted = false
 
     @MainActor
@@ -138,6 +138,7 @@ public final class AppViewModel {
     @MainActor
     private init(clientOperations: ClientOperations, isTestEnvironment: Bool) {
         self.client = clientOperations
+        self.mutationScheduler = MutationScheduler(maxPendingMutations: Self.maxPendingMutations)
         self.isTestEnvironment = isTestEnvironment
         self.shouldPersistLowBatteryProtection = !isTestEnvironment
         self.isLowBatteryProtectionEnabled = isTestEnvironment
@@ -210,7 +211,7 @@ public final class AppViewModel {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                try self.client.registerDaemonIfNeeded()
+                try await self.client.registerDaemonIfNeeded()
             } catch {
                 self.lastError = error.controlPowerSanitizedDescription
             }
@@ -224,10 +225,20 @@ public final class AppViewModel {
         }
     }
 
-    public func refreshStatus() async {
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
+    public func refreshStatus(force: Bool = false) async {
+        let shouldManageBusy = !isBusy
+        if !force && !shouldManageBusy {
+            return
+        }
+        if shouldManageBusy {
+            isBusy = true
+        }
+        defer {
+            if shouldManageBusy {
+                isBusy = false
+            }
+        }
+
         isHelperEnabled = client.isHelperEnabled()
         do {
             let status = try await client.fetchStatus()
@@ -247,7 +258,6 @@ public final class AppViewModel {
 
     public func repairDaemon() async {
         isBusy = true
-        defer { isBusy = false }
         do {
             try await client.repairDaemon()
             helperNeedsRepair = false
@@ -256,7 +266,8 @@ public final class AppViewModel {
             lastError = "Helper repair failed: \(error.controlPowerSanitizedDescription)"
         }
         isHelperEnabled = client.isHelperEnabled()
-        await refreshStatus()
+        isBusy = false
+        await refreshStatus(force: true)
     }
 
     public func toggleHelper() {
@@ -264,19 +275,46 @@ public final class AppViewModel {
     }
 
     public func setHelperEnabled(_ enabled: Bool) {
-        guard enabled != isHelperEnabled else { return }
         let target = enabled
-        do {
-            try client.setHelperEnabled(target)
-            isHelperEnabled = client.isHelperEnabled()
-            lastError = nil
-            
-            Task { @MainActor [weak self] in
-                await self?.refreshStatus()
+        pendingHelperEnabledRequest = target
+
+        enqueueMutation { [weak self] in
+            guard let self else { return }
+            self.isBusy = true
+            defer { self.isBusy = false }
+            defer {
+                if self.pendingHelperEnabledRequest == target {
+                    self.pendingHelperEnabledRequest = nil
+                }
             }
-        } catch {
-            lastError = "Failed to \(target ? "enable" : "disable") helper: \(error.controlPowerSanitizedDescription)"
-            isHelperEnabled = client.isHelperEnabled()
+
+            let currentHelperState = self.client.isHelperEnabled()
+            if currentHelperState == target {
+                self.isHelperEnabled = currentHelperState
+                self.helperNeedsRepair = currentHelperState ? await self.client.isDaemonBroken() : false
+                self.lastError = nil
+                return
+            }
+
+            do {
+                try await self.client.setHelperEnabled(target)
+                self.isHelperEnabled = self.client.isHelperEnabled()
+            } catch {
+                self.lastError = "Failed to \(target ? "enable" : "disable") helper: \(error.controlPowerSanitizedDescription)"
+                self.isHelperEnabled = self.client.isHelperEnabled()
+                self.helperNeedsRepair = self.isHelperEnabled ? await self.client.isDaemonBroken() : false
+                return
+            }
+
+            do {
+                try await self.refreshSnapshotFromClient()
+                self.helperNeedsRepair = self.statusSource == .localFallback && self.isHelperEnabled
+                self.lastError = nil
+            } catch {
+                self.lastError = "Helper was \(target ? "enabled" : "disabled"), but status refresh failed: \(error.controlPowerSanitizedDescription)"
+                self.isHelperEnabled = self.client.isHelperEnabled()
+                self.helperNeedsRepair = self.isHelperEnabled ? await self.client.isDaemonBroken() : false
+            }
         }
     }
 
@@ -293,6 +331,7 @@ public final class AppViewModel {
         let normalizedMinutes = max(0, minutes)
         selectedDurationMinutes = normalizedMinutes
         remainingSeconds = normalizedMinutes * 60
+        timerEndDate = Date().addingTimeInterval(TimeInterval(normalizedMinutes * 60))
 
         // Ensure No Sleep is ON
         if snapshot.disableSleep != true {
@@ -300,14 +339,19 @@ public final class AppViewModel {
         }
 
         timerTask = Task { @MainActor [weak self] in
-            while let self, let seconds = self.remainingSeconds, seconds > 0 {
+            while let self, let timerEndDate = self.timerEndDate {
+                let secondsRemaining = max(0, Int(ceil(timerEndDate.timeIntervalSinceNow)))
+                self.remainingSeconds = secondsRemaining > 0 ? secondsRemaining : nil
+                guard secondsRemaining > 0 else { break }
+
+                let appIsActive = NSApp.isActive
+                let sleepInterval: Duration = appIsActive ? .seconds(1) : .seconds(5)
+                let sleepTolerance: Duration = appIsActive ? .milliseconds(250) : .seconds(1)
                 do {
-                    try await Task.sleep(for: .seconds(1))
+                    try await Task.sleep(for: sleepInterval, tolerance: sleepTolerance)
                 } catch {
                     return
                 }
-                if Task.isCancelled { return }
-                self.remainingSeconds = seconds - 1
             }
             guard let self, !Task.isCancelled else { return }
             self.finishTimerIfNeeded()
@@ -317,6 +361,7 @@ public final class AppViewModel {
     public func cancelTimer() {
         timerTask?.cancel()
         timerTask = nil
+        timerEndDate = nil
         remainingSeconds = nil
     }
 
@@ -449,6 +494,7 @@ public final class AppViewModel {
 
     private func finishTimerIfNeeded() {
         let shouldDisableNoSleep = snapshot.disableSleep == true
+        timerEndDate = nil
         remainingSeconds = nil
         guard shouldDisableNoSleep else { return }
         setDisableSleepEnabled(false)
@@ -490,25 +536,8 @@ public final class AppViewModel {
     }
 
     private func enqueueMutation(_ mutation: @escaping () async -> Void) {
-        let queuedMutationCount = pendingMutations.count - pendingMutationIndex
-        guard queuedMutationCount < Self.maxPendingMutations else {
-            lastError = "Too many pending actions. Please wait for current changes to finish."
-            return
-        }
-        pendingMutations.append(mutation)
-        guard !isProcessingMutations else { return }
-        isProcessingMutations = true
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            while self.pendingMutationIndex < self.pendingMutations.count {
-                let next = self.pendingMutations[self.pendingMutationIndex]
-                self.pendingMutationIndex += 1
-                await next()
-            }
-            self.pendingMutations.removeAll(keepingCapacity: true)
-            self.pendingMutationIndex = 0
-            self.isProcessingMutations = false
+        mutationScheduler.enqueue(mutation) { [weak self] in
+            self?.lastError = "Too many pending actions. Please wait for current changes to finish."
         }
     }
 

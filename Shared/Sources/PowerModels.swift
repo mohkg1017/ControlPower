@@ -5,6 +5,7 @@ public enum PowerHelperConstants {
     public static let daemonPlistName = "com.moe.controlpower.helper.plist"
     public static let daemonLabel = "com.moe.controlpower.helper"
     public static let machServiceName = "com.moe.controlpower.helper.mach"
+    public static let helperExecutableIdentifier = "com.moe.controlpower.helper.bin"
 }
 
 public struct ClientAuthorizationPolicy: Sendable {
@@ -28,6 +29,17 @@ public struct ClientAuthorizationPolicy: Sendable {
 }
 
 public enum CodeSigningRequirementBuilder {
+    public static func signedBinaryRequirementString(
+        identifier: String,
+        teamIdentifier: String?
+    ) -> String {
+        var requirement = "anchor apple generic and identifier \"\(escapeLiteral(identifier))\""
+        if let teamIdentifier {
+            requirement += " and certificate leaf[subject.OU] = \"\(escapeLiteral(teamIdentifier))\""
+        }
+        return requirement
+    }
+
     public static func trustedClientRequirementString(
         bundleIdentifier: String,
         teamIdentifier: String?
@@ -36,9 +48,7 @@ public enum CodeSigningRequirementBuilder {
             return nil
         }
 
-        return """
-        anchor apple generic and identifier "\(escapeLiteral(bundleIdentifier))" and certificate leaf[subject.OU] = "\(escapeLiteral(teamIdentifier))"
-        """
+        return signedBinaryRequirementString(identifier: bundleIdentifier, teamIdentifier: teamIdentifier)
     }
 
     public static func requirement(from requirementString: String) -> SecRequirement? {
@@ -112,41 +122,104 @@ public enum PMSetParser {
 
 enum SystemExecutableValidator {
     private static let pmsetRequirementString = "anchor apple and identifier \"com.apple.pmset\""
+    private static let launchctlRequirementString = "anchor apple and identifier \"com.apple.launchctl\""
 
     static func validateExecutable(at url: URL) -> String? {
+        validateExecutable(
+            at: url,
+            executableName: "pmset",
+            requirementString: pmsetRequirementString
+        )
+    }
+
+    static func validateLaunchctlExecutable(at url: URL) -> String? {
+        validateExecutable(
+            at: url,
+            executableName: "launchctl",
+            requirementString: launchctlRequirementString
+        )
+    }
+
+    static func validateControlPowerHelperExecutable(
+        at url: URL,
+        teamIdentifier: String?
+    ) -> String? {
+        validateExecutable(
+            at: url,
+            executableName: "ControlPowerHelper",
+            requirementString: CodeSigningRequirementBuilder.signedBinaryRequirementString(
+                identifier: PowerHelperConstants.helperExecutableIdentifier,
+                teamIdentifier: teamIdentifier
+            )
+        )
+    }
+
+    private static func validateExecutable(
+        at url: URL,
+        executableName: String,
+        requirementString: String
+    ) -> String? {
         do {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isExecutableKey, .isSymbolicLinkKey])
             guard values.isRegularFile == true else {
-                return "pmset executable is not a regular file"
+                return "\(executableName) executable is not a regular file"
             }
             guard values.isExecutable == true else {
-                return "pmset executable is not marked executable"
+                return "\(executableName) executable is not marked executable"
             }
             guard values.isSymbolicLink != true else {
-                return "pmset executable must not be a symlink"
+                return "\(executableName) executable must not be a symlink"
             }
         } catch {
-            return "Failed to read pmset file attributes: \(error.localizedDescription)"
+            return "Failed to read \(executableName) file attributes: \(error.localizedDescription)"
         }
 
         var staticCode: SecStaticCode?
         let createStatus = SecStaticCodeCreateWithPath(url as CFURL, SecCSFlags(), &staticCode)
         guard createStatus == errSecSuccess, let staticCode else {
-            return "Failed to load pmset code signature (\(createStatus))"
+            return "Failed to load \(executableName) code signature (\(createStatus))"
         }
 
         var requirement: SecRequirement?
-        let requirementStatus = SecRequirementCreateWithString(pmsetRequirementString as CFString, SecCSFlags(), &requirement)
+        let requirementStatus = SecRequirementCreateWithString(requirementString as CFString, SecCSFlags(), &requirement)
         guard requirementStatus == errSecSuccess, let requirement else {
-            return "Failed to build pmset code requirement (\(requirementStatus))"
+            return "Failed to build \(executableName) code requirement (\(requirementStatus))"
         }
 
         let validateStatus = SecStaticCodeCheckValidity(staticCode, SecCSFlags(), requirement)
         guard validateStatus == errSecSuccess else {
             let message = (SecCopyErrorMessageString(validateStatus, nil) as String?) ?? "unknown signature error"
-            return "pmset signature validation failed: \(message)"
+            return "\(executableName) signature validation failed: \(message)"
         }
 
         return nil
+    }
+}
+
+enum ProcessSigningIdentity {
+    static func currentTeamIdentifier() -> String? {
+        var selfCode: SecCode?
+        let selfStatus = SecCodeCopySelf(SecCSFlags(), &selfCode)
+        guard selfStatus == errSecSuccess, let selfCode else {
+            return nil
+        }
+
+        var staticCode: SecStaticCode?
+        let staticStatus = SecCodeCopyStaticCode(selfCode, SecCSFlags(), &staticCode)
+        guard staticStatus == errSecSuccess, let staticCode else {
+            return nil
+        }
+
+        var signingInfo: CFDictionary?
+        let infoStatus = SecCodeCopySigningInformation(
+            staticCode,
+            SecCSFlags(rawValue: kSecCSSigningInformation),
+            &signingInfo
+        )
+        guard infoStatus == errSecSuccess,
+              let signingInfo = signingInfo as? [String: Any] else {
+            return nil
+        }
+        return signingInfo[kSecCodeInfoTeamIdentifier as String] as? String
     }
 }

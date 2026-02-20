@@ -113,6 +113,7 @@ DEVELOPER_ID_APP='Developer ID Application: Your Name (TEAMID)'
 # Optional for notarization:
 # NOTARY_PROFILE='your-notary-profile'
 EOF
+  chmod 600 "$CONFIG_FILE"
   echo "Created $CONFIG_FILE (fill in real values before first release)."
 fi
 

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		15223D24668B13FE8B10198C /* ControlPowerSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B75491BA4E87B9ABDEB4153 /* ControlPowerSettingsView.swift */; };
 		158FF234F28C2193BFF51408 /* ErrorSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DBDA897E9CEE1875012C32 /* ErrorSanitizer.swift */; };
 		17431CABD782A0CF04CFF33B /* ControlPowerCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = C3F9E37062B3EB7E2781BB7D /* ControlPowerCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		18AEA442F043DC801313EE5C /* TimedProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA70449A591DF349FFFB343E /* TimedProcessRunner.swift */; };
@@ -17,6 +18,7 @@
 		324E23BF8995AED83FEEF692 /* PowerDaemonClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C409F0548AC1CBA6D54AFCA /* PowerDaemonClient.swift */; };
 		35EDD54DB9267992A1EDF3C9 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9B19193CDBB8FE4FC08D737A /* PrivacyInfo.xcprivacy */; };
 		401E5B32E9CBD4F2F949053D /* ControlPowerCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = C3F9E37062B3EB7E2781BB7D /* ControlPowerCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		424B16826D8330C607025F15 /* MutationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 199A04101523509B5F605332 /* MutationScheduler.swift */; };
 		469A3196AD1EC117750F14B8 /* TimedProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA70449A591DF349FFFB343E /* TimedProcessRunner.swift */; };
 		4B2ED42888E360822606E00C /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E581B73090FE7376C524BC66 /* AppViewModel.swift */; };
 		51E5294CF73A2D28D0847770 /* ControlPowerCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3F9E37062B3EB7E2781BB7D /* ControlPowerCore.framework */; };
@@ -24,6 +26,7 @@
 		6387755A1C22EE60CE7C933C /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 644188FD8F3C5299A32FFC2C /* AppIntents.framework */; };
 		6F47554028CD76DF960DDF6D /* com.moe.controlpower.helper.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = A226D81853A36A42D4BE4192 /* com.moe.controlpower.helper.plist */; };
 		762B94CF67F8DBF1DCA6F575 /* PowerDaemonClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C409F0548AC1CBA6D54AFCA /* PowerDaemonClient.swift */; };
+		7647FC586286362E2DC44972 /* MutationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 199A04101523509B5F605332 /* MutationScheduler.swift */; };
 		7EA6999510CC3E4FB2EA1037 /* ControlPowerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F841A72B3332FF60B3550DA /* ControlPowerApp.swift */; };
 		8A5940DEC361A4D31B34D280 /* PowerHelperXPCProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A9685F3170D8BDA92CEF69F /* PowerHelperXPCProtocol.swift */; };
 		A248852818FC187C9336C356 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40866E50BC166BB7E65974EA /* MainView.swift */; };
@@ -98,6 +101,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		199A04101523509B5F605332 /* MutationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MutationScheduler.swift; sourceTree = "<group>"; };
 		1B5716BBCDF23760B8B7A1A6 /* ControlPowerHelper */ = {isa = PBXFileReference; includeInIndex = 0; path = ControlPowerHelper; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B96B69A6A8ED82D60AA1F18 /* ControlPower.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ControlPower.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		40866E50BC166BB7E65974EA /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
@@ -113,6 +117,7 @@
 		8D54C5DB2B86EACC4549F571 /* ControlPowerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPowerTests.swift; sourceTree = "<group>"; };
 		9A5181433813C33673C8E1A0 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		9B19193CDBB8FE4FC08D737A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		9B75491BA4E87B9ABDEB4153 /* ControlPowerSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPowerSettingsView.swift; sourceTree = "<group>"; };
 		9EFEC6DE9BE3E22C6BA72568 /* ServiceManagement.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ServiceManagement.framework; path = System/Library/Frameworks/ServiceManagement.framework; sourceTree = SDKROOT; };
 		A226D81853A36A42D4BE4192 /* com.moe.controlpower.helper.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = com.moe.controlpower.helper.plist; sourceTree = "<group>"; };
 		C3F9E37062B3EB7E2781BB7D /* ControlPowerCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = ControlPowerCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -169,8 +174,10 @@
 			children = (
 				E581B73090FE7376C524BC66 /* AppViewModel.swift */,
 				7F841A72B3332FF60B3550DA /* ControlPowerApp.swift */,
+				9B75491BA4E87B9ABDEB4153 /* ControlPowerSettingsView.swift */,
 				40866E50BC166BB7E65974EA /* MainView.swift */,
 				7F534132BEC0146A3D375F2B /* MenuBarPanelView.swift */,
+				199A04101523509B5F605332 /* MutationScheduler.swift */,
 			);
 			name = AppSources;
 			path = App/Sources;
@@ -424,8 +431,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				7EA6999510CC3E4FB2EA1037 /* ControlPowerApp.swift in Sources */,
+				15223D24668B13FE8B10198C /* ControlPowerSettingsView.swift in Sources */,
 				A248852818FC187C9336C356 /* MainView.swift in Sources */,
 				1A59E944B8274794A041394F /* MenuBarPanelView.swift in Sources */,
+				424B16826D8330C607025F15 /* MutationScheduler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -435,6 +444,7 @@
 			files = (
 				4B2ED42888E360822606E00C /* AppViewModel.swift in Sources */,
 				A624E49C07C480D9E1CF2A20 /* ErrorSanitizer.swift in Sources */,
+				7647FC586286362E2DC44972 /* MutationScheduler.swift in Sources */,
 				324E23BF8995AED83FEEF692 /* PowerDaemonClient.swift in Sources */,
 				8A5940DEC361A4D31B34D280 /* PowerHelperXPCProtocol.swift in Sources */,
 				DCFF126A613FC9E115AC78AC /* PowerModels.swift in Sources */,
@@ -490,6 +500,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = ControlPowerHelper;
 				INFOPLIST_KEY_LSMinimumSystemVersion = 26.0;
@@ -552,6 +563,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = ControlPowerHelper;
 				INFOPLIST_KEY_LSMinimumSystemVersion = 26.0;
@@ -588,6 +600,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = ControlPowerHelper;
 				INFOPLIST_KEY_LSMinimumSystemVersion = 26.0;
@@ -857,8 +870,8 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
-				SWIFT_COMPILATION_MODE = incremental;
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 			};
