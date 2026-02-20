@@ -150,7 +150,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             return PowerHelperStatus(
                 snapshot: snapshot,
                 source: .localFallback,
-                fallbackReason: "Helper status is \(daemonStatusDescription(service.status))"
+                fallbackReason: "Helper status is \(Self.daemonStatusDescription(service.status))"
             )
         }
 
@@ -227,15 +227,9 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         }
 
         let isReachable = (try? await Self.pingHelper(timeoutSeconds: Self.xpcProbeTimeoutSeconds)) == true
-        guard !isReachable else {
-            return
+        if let helperReadinessError = Self.helperWriteReadinessError(status: status, helperReachable: isReachable) {
+            throw helperReadinessError
         }
-
-        throw NSError(
-            domain: "ControlPower.Helper",
-            code: 8,
-            userInfo: [NSLocalizedDescriptionKey: "Write actions need the ControlPower helper approved in System Settings > Login Items. Current helper status: \(daemonStatusDescription(status))."]
-        )
     }
 
     nonisolated private static func fetchStatusFromHelper() async throws -> PowerHelperStatus {
@@ -302,7 +296,22 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         return snapshot
     }
 
-    private func daemonStatusDescription(_ status: SMAppService.Status) -> String {
+    nonisolated static func helperWriteReadinessError(
+        status: SMAppService.Status,
+        helperReachable: Bool
+    ) -> NSError? {
+        guard !helperStatusAllowsWrites(status), !helperReachable else {
+            return nil
+        }
+
+        return NSError(
+            domain: "ControlPower.Helper",
+            code: 8,
+            userInfo: [NSLocalizedDescriptionKey: "Write actions need the ControlPower helper approved in System Settings > Login Items. Current helper status: \(daemonStatusDescription(status))."]
+        )
+    }
+
+    private nonisolated static func daemonStatusDescription(_ status: SMAppService.Status) -> String {
         switch status {
         case .enabled:
             return "Enabled"

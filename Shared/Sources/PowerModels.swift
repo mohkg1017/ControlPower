@@ -27,6 +27,36 @@ public struct ClientAuthorizationPolicy: Sendable {
     }
 }
 
+public enum CodeSigningRequirementBuilder {
+    public static func trustedClientRequirementString(
+        bundleIdentifier: String,
+        teamIdentifier: String?
+    ) -> String? {
+        guard let teamIdentifier else {
+            return nil
+        }
+
+        return """
+        anchor apple generic and identifier "\(escapeLiteral(bundleIdentifier))" and certificate leaf[subject.OU] = "\(escapeLiteral(teamIdentifier))"
+        """
+    }
+
+    public static func requirement(from requirementString: String) -> SecRequirement? {
+        var requirement: SecRequirement?
+        let status = SecRequirementCreateWithString(requirementString as CFString, SecCSFlags(), &requirement)
+        guard status == errSecSuccess, let requirement else {
+            return nil
+        }
+        return requirement
+    }
+
+    private static func escapeLiteral(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+}
+
 public struct PMSetSnapshot: Equatable, Sendable {
     public var disableSleep: Bool?
     public var lidWake: Bool?

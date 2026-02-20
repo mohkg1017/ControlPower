@@ -368,6 +368,47 @@ nonisolated final class ControlPowerTests: XCTestCase {
         XCTAssertFalse(policy.isAuthorizedClient(bundleIdentifier: "com.moe.controlpower", teamIdentifier: "TEAM123"))
     }
 
+    func testTrustedClientRequirementStringRequiresTeamIdentifier() {
+        let requirement = CodeSigningRequirementBuilder.trustedClientRequirementString(
+            bundleIdentifier: "com.moe.controlpower",
+            teamIdentifier: nil
+        )
+        XCTAssertNil(requirement)
+    }
+
+    func testTrustedClientRequirementStringBuildsExpectedRule() {
+        let requirement = CodeSigningRequirementBuilder.trustedClientRequirementString(
+            bundleIdentifier: "com.moe.controlpower",
+            teamIdentifier: "TEAM123"
+        )
+
+        XCTAssertEqual(
+            requirement,
+            "anchor apple generic and identifier \"com.moe.controlpower\" and certificate leaf[subject.OU] = \"TEAM123\""
+        )
+    }
+
+    func testTrustedClientRequirementStringEscapesLiterals() {
+        let requirement = CodeSigningRequirementBuilder.trustedClientRequirementString(
+            bundleIdentifier: "com.moe.\"control\"power\\app",
+            teamIdentifier: "TEAM\"\\\\123"
+        )
+
+        XCTAssertEqual(
+            requirement,
+            "anchor apple generic and identifier \"com.moe.\\\"control\\\"power\\\\app\" and certificate leaf[subject.OU] = \"TEAM\\\"\\\\\\\\123\""
+        )
+    }
+
+    func testTrustedClientRequirementStringCompilesToSecRequirement() {
+        let requirementString = CodeSigningRequirementBuilder.trustedClientRequirementString(
+            bundleIdentifier: "com.moe.controlpower",
+            teamIdentifier: "TEAM123"
+        )
+        XCTAssertNotNil(requirementString)
+        XCTAssertNotNil(CodeSigningRequirementBuilder.requirement(from: requirementString ?? ""))
+    }
+
     func testHelperStatusAllowsWritesOnlyWhenEnabled() {
         XCTAssertTrue(PowerDaemonClient.helperStatusAllowsWrites(.enabled))
     }
@@ -376,6 +417,22 @@ nonisolated final class ControlPowerTests: XCTestCase {
         XCTAssertFalse(PowerDaemonClient.helperStatusAllowsWrites(.requiresApproval))
         XCTAssertFalse(PowerDaemonClient.helperStatusAllowsWrites(.notRegistered))
         XCTAssertFalse(PowerDaemonClient.helperStatusAllowsWrites(.notFound))
+    }
+
+    func testHelperWriteReadinessErrorAllowsEnabledStatus() {
+        let error = PowerDaemonClient.helperWriteReadinessError(status: .enabled, helperReachable: false)
+        XCTAssertNil(error)
+    }
+
+    func testHelperWriteReadinessErrorAllowsReachableHelper() {
+        let error = PowerDaemonClient.helperWriteReadinessError(status: .requiresApproval, helperReachable: true)
+        XCTAssertNil(error)
+    }
+
+    func testHelperWriteReadinessErrorIncludesCurrentStatusWhenBlocked() {
+        let error = PowerDaemonClient.helperWriteReadinessError(status: .requiresApproval, helperReachable: false)
+        let message = error?.localizedDescription ?? ""
+        XCTAssertTrue(message.contains("Current helper status: Requires Approval"))
     }
 
     func testXPCReplyGateCancelsInstalledTimeoutTask() async throws {

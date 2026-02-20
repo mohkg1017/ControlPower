@@ -60,53 +60,35 @@ private struct AuthorizedClientIdentity {
         return (signingIdentifier, teamIdentifier)
     }
 
-    static func requirement(for policy: ClientAuthorizationPolicy) -> SecRequirement? {
-        guard let teamIdentifier = policy.teamIdentifier else {
-            return nil
-        }
-
-        let requirementString = """
-        anchor apple generic and identifier "\(escapeRequirementLiteral(policy.bundleIdentifier))" and certificate leaf[subject.OU] = "\(escapeRequirementLiteral(teamIdentifier))"
-        """
-        var requirement: SecRequirement?
-        let status = SecRequirementCreateWithString(requirementString as CFString, SecCSFlags(), &requirement)
-        guard status == errSecSuccess, let requirement else {
-            return nil
-        }
-        return requirement
-    }
-
-    static func guestCode(for connection: NSXPCConnection) -> SecCode? {
-        let pidAttributes = [kSecGuestAttributePid as String: NSNumber(value: connection.processIdentifier)] as CFDictionary
-        var guestCode: SecCode?
-        let pidStatus = SecCodeCopyGuestWithAttributes(nil, pidAttributes, SecCSFlags(), &guestCode)
-        guard pidStatus == errSecSuccess else {
-            return nil
-        }
-        return guestCode
-    }
-
-    private static func escapeRequirementLiteral(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
+    static func requirementString(for policy: ClientAuthorizationPolicy) -> String? {
+        CodeSigningRequirementBuilder.trustedClientRequirementString(
+            bundleIdentifier: policy.bundleIdentifier,
+            teamIdentifier: policy.teamIdentifier
+        )
     }
 }
 
 final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate {
     private let service = HelperService()
-    private let authorizationPolicy: ClientAuthorizationPolicy
-    private let authorizationRequirement: SecRequirement?
+    private let authorizationRequirementString: String?
 
     override init() {
         let policy = AuthorizedClientIdentity.loadPolicy()
-        self.authorizationPolicy = policy
-        self.authorizationRequirement = AuthorizedClientIdentity.requirement(for: policy)
+        self.authorizationRequirementString = AuthorizedClientIdentity.requirementString(for: policy)
         super.init()
     }
 
+    func configure(listener: NSXPCListener) {
+        guard let authorizationRequirementString else {
+            return
+        }
+        if #available(macOS 13.0, *) {
+            listener.setConnectionCodeSigningRequirement(authorizationRequirementString)
+        }
+    }
+
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
-        guard isAuthorizedClient(newConnection) else {
+        guard authorizationRequirementString != nil else {
             return false
         }
         newConnection.exportedInterface = NSXPCInterface(with: PowerHelperXPCProtocol.self)
@@ -114,39 +96,11 @@ final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate {
         newConnection.resume()
         return true
     }
-
-    private func isAuthorizedClient(_ connection: NSXPCConnection) -> Bool {
-        guard
-            let guestCode = AuthorizedClientIdentity.guestCode(for: connection),
-            let authorizationRequirement
-        else {
-            return false
-        }
-
-        let validityStatus = SecCodeCheckValidity(guestCode, SecCSFlags(), authorizationRequirement)
-        guard validityStatus == errSecSuccess else {
-            return false
-        }
-
-        var staticCode: SecStaticCode?
-        let staticStatus = SecCodeCopyStaticCode(guestCode, SecCSFlags(), &staticCode)
-        guard staticStatus == errSecSuccess, let staticCode else {
-            return false
-        }
-
-        guard let signingIdentity = AuthorizedClientIdentity.signingIdentity(for: staticCode) else {
-            return false
-        }
-
-        return authorizationPolicy.isAuthorizedClient(
-            bundleIdentifier: signingIdentity.identifier,
-            teamIdentifier: signingIdentity.teamIdentifier
-        )
-    }
 }
 
 let delegate = HelperListenerDelegate()
 let listener = NSXPCListener(machServiceName: PowerHelperConstants.machServiceName)
+delegate.configure(listener: listener)
 listener.delegate = delegate
 listener.resume()
 RunLoop.main.run()
