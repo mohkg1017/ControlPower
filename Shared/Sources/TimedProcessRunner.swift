@@ -30,9 +30,10 @@ public struct TimedProcessRunner: Sendable {
         process.standardOutput = outputPipe
         process.standardError = outputPipe
 
-        let exitSignal = DispatchSemaphore(value: 0)
+        let terminationGroup = DispatchGroup()
+        terminationGroup.enter()
         process.terminationHandler = { _ in
-            exitSignal.signal()
+            terminationGroup.leave()
         }
 
         do {
@@ -41,17 +42,17 @@ public struct TimedProcessRunner: Sendable {
             return TimedProcessResult(success: false, output: error.localizedDescription, timedOut: false)
         }
 
-        let finishedInTime = exitSignal.wait(timeout: .now() + timeoutSeconds) == .success
+        let finishedInTime = terminationGroup.wait(timeout: .now() + timeoutSeconds) == .success
         if !finishedInTime {
             var processStopped = false
             if process.isRunning {
                 process.terminate()
             }
-            processStopped = exitSignal.wait(timeout: .now() + 1) == .success || !process.isRunning
+            processStopped = terminationGroup.wait(timeout: .now() + 1) == .success || !process.isRunning
 
             if !processStopped && process.isRunning {
                 kill(process.processIdentifier, SIGKILL)
-                processStopped = exitSignal.wait(timeout: .now() + 1) == .success || !process.isRunning
+                processStopped = terminationGroup.wait(timeout: .now() + 1) == .success || !process.isRunning
             }
 
             if !processStopped {

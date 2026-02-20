@@ -61,7 +61,7 @@ private struct AuthorizedClientIdentity {
     }
 }
 
-final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate, @unchecked Sendable {
+final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate {
     private let service = HelperService()
     private let authorizationPolicy = AuthorizedClientIdentity.loadPolicy()
 

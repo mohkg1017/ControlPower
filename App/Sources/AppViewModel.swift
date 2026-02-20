@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import IOKit.ps
 import Observation
 
 public enum PowerMode {
@@ -16,6 +18,77 @@ public enum PowerStatusTint {
 @MainActor
 @Observable
 public final class AppViewModel {
+    private final class BatteryMonitorContext {
+        weak var viewModel: AppViewModel?
+
+        init(viewModel: AppViewModel) {
+            self.viewModel = viewModel
+        }
+    }
+
+    private struct ClientOperations: Sendable {
+        private let registerDaemonIfNeededOperation: @Sendable () throws -> Void
+        private let fetchStatusOperation: @Sendable () async throws -> PowerHelperStatus
+        private let setDisableSleepOperation: @Sendable (Bool) async throws -> Void
+        private let restoreDefaultsOperation: @Sendable () async throws -> Void
+        private let displaySleepNowOperation: @Sendable () async throws -> Void
+        private let isHelperEnabledOperation: @Sendable () -> Bool
+        private let setHelperEnabledOperation: @Sendable (Bool) throws -> Void
+        private let isDaemonBrokenOperation: @Sendable () async -> Bool
+        private let repairDaemonOperation: @Sendable () async throws -> Void
+
+        init<Client: PowerDaemonClientProtocol>(_ client: Client) {
+            registerDaemonIfNeededOperation = { try client.registerDaemonIfNeeded() }
+            fetchStatusOperation = { try await client.fetchStatus() }
+            setDisableSleepOperation = { enabled in try await client.setDisableSleep(enabled) }
+            restoreDefaultsOperation = { try await client.restoreDefaults() }
+            displaySleepNowOperation = { try await client.displaySleepNow() }
+            isHelperEnabledOperation = { client.isHelperEnabled() }
+            setHelperEnabledOperation = { enabled in try client.setHelperEnabled(enabled) }
+            isDaemonBrokenOperation = { await client.isDaemonBroken() }
+            repairDaemonOperation = { try await client.repairDaemon() }
+        }
+
+        func registerDaemonIfNeeded() throws {
+            try registerDaemonIfNeededOperation()
+        }
+
+        func fetchStatus() async throws -> PowerHelperStatus {
+            try await fetchStatusOperation()
+        }
+
+        func setDisableSleep(_ enabled: Bool) async throws {
+            try await setDisableSleepOperation(enabled)
+        }
+
+        func restoreDefaults() async throws {
+            try await restoreDefaultsOperation()
+        }
+
+        func displaySleepNow() async throws {
+            try await displaySleepNowOperation()
+        }
+
+        func isHelperEnabled() -> Bool {
+            isHelperEnabledOperation()
+        }
+
+        func setHelperEnabled(_ enabled: Bool) throws {
+            try setHelperEnabledOperation(enabled)
+        }
+
+        func isDaemonBroken() async -> Bool {
+            await isDaemonBrokenOperation()
+        }
+
+        func repairDaemon() async throws {
+            try await repairDaemonOperation()
+        }
+    }
+
+    nonisolated private static let lowBatteryProtectionKey = "lowBatteryProtection"
+    nonisolated private static let maxPendingMutations = 64
+
     public var snapshot = PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "No status yet")
     public var statusSource: PowerStatusSource = .localFallback
     public var isHelperEnabled = false
@@ -28,25 +101,48 @@ public final class AppViewModel {
     private var timerTask: Task<Void, Never>?
 
     public var batteryLevel: Int = 100
-    public var isLowBatteryProtectionEnabled: Bool = UserDefaults.standard.object(forKey: "lowBatteryProtection") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(isLowBatteryProtectionEnabled, forKey: "lowBatteryProtection") }
+    public var isLowBatteryProtectionEnabled: Bool = true {
+        didSet {
+            guard shouldPersistLowBatteryProtection else { return }
+            UserDefaults.standard.set(isLowBatteryProtectionEnabled, forKey: Self.lowBatteryProtectionKey)
+        }
     }
-    private var batteryMonitorTask: Task<Void, Never>?
+    private var batterySourceRunLoopSource: CFRunLoopSource?
+    private var batteryMonitorContextPointer: UnsafeMutableRawPointer?
 
-    private let client: any PowerDaemonClientProtocol
+    private let client: ClientOperations
     private let isTestEnvironment: Bool
+    private let shouldPersistLowBatteryProtection: Bool
     private var pendingMutations: [() async -> Void] = []
+    private var pendingMutationIndex = 0
     private var isProcessingMutations = false
     private var hasStarted = false
 
     @MainActor
-    public init(
-        client: any PowerDaemonClientProtocol = PowerDaemonClient(),
+    public convenience init(
+        client: PowerDaemonClient = PowerDaemonClient(),
         isTestEnvironment: Bool = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     ) {
-        self.client = client
+        self.init(clientOperations: ClientOperations(client), isTestEnvironment: isTestEnvironment)
+    }
+
+    @MainActor
+    public convenience init<Client: PowerDaemonClientProtocol>(
+        client: Client,
+        isTestEnvironment: Bool = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    ) {
+        self.init(clientOperations: ClientOperations(client), isTestEnvironment: isTestEnvironment)
+    }
+
+    @MainActor
+    private init(clientOperations: ClientOperations, isTestEnvironment: Bool) {
+        self.client = clientOperations
         self.isTestEnvironment = isTestEnvironment
-        self.isHelperEnabled = client.isHelperEnabled()
+        self.shouldPersistLowBatteryProtection = !isTestEnvironment
+        self.isLowBatteryProtectionEnabled = isTestEnvironment
+            ? true
+            : (UserDefaults.standard.object(forKey: Self.lowBatteryProtectionKey) as? Bool ?? true)
+        self.isHelperEnabled = clientOperations.isHelperEnabled()
         if !isTestEnvironment {
             setupBatteryMonitoring()
         }
@@ -55,7 +151,7 @@ public final class AppViewModel {
     @MainActor
     deinit {
         timerTask?.cancel()
-        batteryMonitorTask?.cancel()
+        tearDownBatteryMonitoring()
     }
 
     public var powerMode: PowerMode {
@@ -110,17 +206,19 @@ public final class AppViewModel {
             return
         }
 
-        do {
-            try client.registerDaemonIfNeeded()
-        } catch {
-            lastError = safeErrorMessage(error)
-        }
-        
-        isHelperEnabled = client.isHelperEnabled()
-        helperNeedsRepair = client.isDaemonBroken()
-
-        Task { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else { return }
+            do {
+                let client = self.client
+                try await Task.detached(priority: .utility) {
+                    try client.registerDaemonIfNeeded()
+                }.value
+            } catch {
+                self.lastError = error.controlPowerSanitizedDescription
+            }
+
+            self.isHelperEnabled = self.client.isHelperEnabled()
+            self.helperNeedsRepair = await self.client.isDaemonBroken()
             await self.refreshStatus()
             if self.helperNeedsRepair {
                 await self.repairDaemon()
@@ -142,10 +240,10 @@ public final class AppViewModel {
             helperNeedsRepair = status.source == .localFallback && isHelperEnabled
             checkBatterySafety()
         } catch {
-            if client.isDaemonBroken() {
+            if await client.isDaemonBroken() {
                 helperNeedsRepair = true
             }
-            lastError = "Refresh status failed: \(safeErrorMessage(error))"
+            lastError = "Refresh status failed: \(error.controlPowerSanitizedDescription)"
         }
     }
 
@@ -157,7 +255,7 @@ public final class AppViewModel {
             helperNeedsRepair = false
             lastError = nil
         } catch {
-            lastError = "Helper repair failed: \(safeErrorMessage(error))"
+            lastError = "Helper repair failed: \(error.controlPowerSanitizedDescription)"
         }
         isHelperEnabled = client.isHelperEnabled()
         await refreshStatus()
@@ -170,11 +268,11 @@ public final class AppViewModel {
             isHelperEnabled = client.isHelperEnabled()
             lastError = nil
             
-            Task { [weak self] in
+            Task { @MainActor [weak self] in
                 await self?.refreshStatus()
             }
         } catch {
-            lastError = "Failed to \(target ? "enable" : "disable") helper: \(safeErrorMessage(error))"
+            lastError = "Failed to \(target ? "enable" : "disable") helper: \(error.controlPowerSanitizedDescription)"
             isHelperEnabled = client.isHelperEnabled()
         }
     }
@@ -221,6 +319,12 @@ public final class AppViewModel {
         }
     }
 
+    public func copyStatusToClipboard() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(snapshot.summary, forType: .string)
+    }
+
     public func restoreDefaults() {
         cancelTimer()
         enqueueOperation("Restore defaults") { viewModel in
@@ -238,35 +342,90 @@ public final class AppViewModel {
         }
     }
 
+    public var remainingTimeString: String? {
+        guard let totalSeconds = remainingSeconds else { return nil }
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let seconds = totalSeconds % 60
+        if hours > 0 {
+            return String(format: "%dh %02dm %02ds", hours, minutes, seconds)
+        }
+        return String(format: "%02dm %02ds", minutes, seconds)
+    }
+
+    nonisolated public static func durationLabel(for minutes: Int) -> String {
+        minutes >= 60 ? "\(minutes / 60)h" : "\(minutes)m"
+    }
+
     // MARK: - Internal
 
     private func setupBatteryMonitoring() {
-        batteryMonitorTask?.cancel()
-        batteryMonitorTask = Task { [weak self] in
-            while !Task.isCancelled {
-                guard let self else { return }
-                await self.updateBatteryLevel()
-                do {
-                    try await Task.sleep(for: .seconds(60))
-                } catch {
-                    return
-                }
+        tearDownBatteryMonitoring()
+
+        updateBatteryLevelFromSystem()
+
+        let contextPointer = Unmanaged.passRetained(BatteryMonitorContext(viewModel: self)).toOpaque()
+
+        guard let source = IOPSNotificationCreateRunLoopSource({ context in
+            guard let context else { return }
+            let monitorContext = Unmanaged<BatteryMonitorContext>.fromOpaque(context).takeUnretainedValue()
+            guard let viewModel = monitorContext.viewModel else { return }
+            Task { @MainActor in
+                viewModel.updateBatteryLevelFromSystem()
             }
+        }, contextPointer)?.takeRetainedValue() else {
+            Unmanaged<BatteryMonitorContext>.fromOpaque(contextPointer).release()
+            return
+        }
+
+        batteryMonitorContextPointer = contextPointer
+        batterySourceRunLoopSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode)
+    }
+
+    private func tearDownBatteryMonitoring() {
+        if let source = batterySourceRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .defaultMode)
+            batterySourceRunLoopSource = nil
+        }
+        if let contextPointer = batteryMonitorContextPointer {
+            Unmanaged<BatteryMonitorContext>.fromOpaque(contextPointer).release()
+            batteryMonitorContextPointer = nil
         }
     }
 
-    private func updateBatteryLevel() async {
-        let output = await Task.detached(priority: .utility) {
-            TimedProcessRunner(executableURL: URL(fileURLWithPath: "/usr/bin/pmset"), timeoutSeconds: 5)
-                .run(arguments: ["-g", "batt"]).output
-        }.value
-        
-        if let range = output.range(of: #"\d+%"#, options: .regularExpression) {
-            let percentage = String(output[range]).replacingOccurrences(of: "%", with: "")
-            if let level = Int(percentage) {
-                batteryLevel = level
-                checkBatterySafety()
+    private func updateBatteryLevelFromSystem() {
+        guard
+            let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+            let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef]
+        else {
+            return
+        }
+
+        var firstCapacity: Int?
+        for source in sources {
+            guard
+                let description = IOPSGetPowerSourceDescription(snapshot, source)?.takeUnretainedValue() as? [String: Any],
+                let capacity = description[kIOPSCurrentCapacityKey as String] as? Int
+            else {
+                continue
             }
+
+            if firstCapacity == nil {
+                firstCapacity = capacity
+            }
+
+            if let state = description[kIOPSPowerSourceStateKey as String] as? String,
+               state == kIOPSBatteryPowerValue {
+                batteryLevel = capacity
+                checkBatterySafety()
+                return
+            }
+        }
+
+        if let firstCapacity {
+            batteryLevel = firstCapacity
+            checkBatterySafety()
         }
     }
 
@@ -311,16 +470,24 @@ public final class AppViewModel {
     }
 
     private func enqueueMutation(_ mutation: @escaping () async -> Void) {
+        let queuedMutationCount = pendingMutations.count - pendingMutationIndex
+        guard queuedMutationCount < Self.maxPendingMutations else {
+            lastError = "Too many pending actions. Please wait for current changes to finish."
+            return
+        }
         pendingMutations.append(mutation)
         guard !isProcessingMutations else { return }
         isProcessingMutations = true
 
         Task { @MainActor [weak self] in
             guard let self else { return }
-            while !self.pendingMutations.isEmpty {
-                let next = self.pendingMutations.removeFirst()
+            while self.pendingMutationIndex < self.pendingMutations.count {
+                let next = self.pendingMutations[self.pendingMutationIndex]
+                self.pendingMutationIndex += 1
                 await next()
             }
+            self.pendingMutations.removeAll(keepingCapacity: true)
+            self.pendingMutationIndex = 0
             self.isProcessingMutations = false
         }
     }
@@ -334,19 +501,8 @@ public final class AppViewModel {
             lastError = nil
             return true
         } catch {
-            lastError = "\(label) failed: \(safeErrorMessage(error))"
+            lastError = "\(label) failed: \(error.controlPowerSanitizedDescription)"
             return false
         }
-    }
-
-    private func safeErrorMessage(_ error: Error) -> String {
-        let sanitized = error.localizedDescription
-            .replacingOccurrences(of: "\r", with: " ")
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !sanitized.isEmpty else {
-            return "Unknown error"
-        }
-        return String(sanitized.prefix(200))
     }
 }

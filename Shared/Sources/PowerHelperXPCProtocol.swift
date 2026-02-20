@@ -5,4 +5,5 @@ import Foundation
     func fetchStatus(_ reply: @escaping (Bool, Int, Int, String, String) -> Void)
     func setDisableSleep(_ enabled: Bool, _ reply: @escaping (Bool, String) -> Void)
     func restoreDefaults(_ reply: @escaping (Bool, String) -> Void)
+    // Intentionally no `displaySleepNow`: this call does not require elevated privileges.
 }

@@ -1,5 +1,6 @@
 import Foundation
 import ServiceManagement
+import Synchronization
 
 public enum PowerStatusSource: Sendable, Equatable {
     case helper
@@ -26,7 +27,7 @@ public protocol PowerDaemonClientProtocol: Sendable {
     func displaySleepNow() async throws
     func isHelperEnabled() -> Bool
     func setHelperEnabled(_ enabled: Bool) throws
-    func isDaemonBroken() -> Bool
+    func isDaemonBroken() async -> Bool
     func repairDaemon() async throws
 }
 
@@ -38,7 +39,6 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     nonisolated private static let localPMSetTimeoutSeconds: TimeInterval = 8
     nonisolated private static let registrationProbeTimeoutSeconds: TimeInterval = 3
     nonisolated private static let pmsetValidationError = SystemExecutableValidator.validateExecutable(at: pmsetURL)
-    nonisolated private static let expectedProgramIdentifier = "Contents/Resources/ControlPowerHelper"
 
     public init() {}
 
@@ -51,9 +51,10 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     public func registerDaemonIfNeeded() throws {
-        switch daemonService.status {
+        let service = daemonService
+        switch service.status {
         case .notRegistered, .notFound:
-            try daemonService.register()
+            try service.register()
         case .enabled:
             return
         case .requiresApproval:
@@ -64,43 +65,50 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     public func isHelperEnabled() -> Bool {
-        Self.helperStatusAllowsWrites(daemonService.status)
+        let service = daemonService
+        return Self.helperStatusAllowsWrites(service.status)
     }
 
     public func setHelperEnabled(_ enabled: Bool) throws {
+        let service = daemonService
         if enabled {
-            try daemonService.register()
+            try service.register()
         } else {
-            try daemonService.unregister()
+            try service.unregister()
         }
     }
 
-    public func isDaemonBroken() -> Bool {
-        guard daemonService.status == .enabled else { return false }
-        let result = TimedProcessRunner(
-            executableURL: Self.launchctlURL,
-            timeoutSeconds: Self.registrationProbeTimeoutSeconds
-        ).run(arguments: ["print", "system/\(PowerHelperConstants.daemonLabel)"])
-        guard result.success else { return false }
-        return result.output.contains("spawn failed") || result.output.contains("EX_CONFIG")
+    public func isDaemonBroken() async -> Bool {
+        let service = daemonService
+        guard service.status == .enabled else { return false }
+        return await Task.detached(priority: .utility) {
+            let result = TimedProcessRunner(
+                executableURL: Self.launchctlURL,
+                timeoutSeconds: Self.registrationProbeTimeoutSeconds
+            ).run(arguments: ["print", "system/\(PowerHelperConstants.daemonLabel)"])
+            guard result.success else { return false }
+            return result.output.contains("spawn failed") || result.output.contains("EX_CONFIG")
+        }.value
     }
 
     public func repairDaemon() async throws {
+        let service = daemonService
         await bootoutDaemon()
-        try? await daemonService.unregister()
+        try? await service.unregister()
         try? await Task.sleep(for: .seconds(1))
-        try daemonService.register()
+        try service.register()
     }
 
     public func fetchStatus() async throws -> PowerHelperStatus {
-        if daemonService.status != .enabled {
+        let service = daemonService
+        if service.status != .enabled {
             let snapshot = try await Task.detached(priority: .userInitiated) {
                 try Self.fetchLocalPMSetSnapshot()
             }.value
             return PowerHelperStatus(
                 snapshot: snapshot,
                 source: .localFallback,
-                fallbackReason: "Helper status is \(daemonStatusDescription(daemonService.status))"
+                fallbackReason: "Helper status is \(daemonStatusDescription(service.status))"
             )
         }
 
@@ -113,7 +121,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             return PowerHelperStatus(
                 snapshot: snapshot,
                 source: .localFallback,
-                fallbackReason: Self.sanitizedErrorMessage(error)
+                fallbackReason: error.controlPowerSanitizedDescription
             )
         }
     }
@@ -139,6 +147,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     public func displaySleepNow() async throws {
+        // `pmset displaysleepnow` is intentionally local so this action still works when the helper is not approved.
         if let pmsetValidationError = Self.pmsetValidationError {
             throw NSError(
                 domain: "ControlPower.LocalPMSet",
@@ -238,45 +247,6 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         }
     }
 
-    private func needsDaemonRefresh() -> Bool {
-        let result = TimedProcessRunner(
-            executableURL: Self.launchctlURL,
-            timeoutSeconds: Self.registrationProbeTimeoutSeconds
-        ).run(arguments: ["print", "system/\(PowerHelperConstants.daemonLabel)"])
-        guard result.success else {
-            return false
-        }
-
-        if result.output.contains("needs LWCR update") {
-            return true
-        }
-
-        if result.output.contains("job state = spawn failed") {
-            return true
-        }
-
-        guard let identifier = registeredProgramIdentifier(from: result.output) else {
-            return false
-        }
-        return identifier != Self.expectedProgramIdentifier
-    }
-
-    private func registeredProgramIdentifier(from output: String) -> String? {
-        for rawLine in output.split(whereSeparator: \.isNewline) {
-            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            let prefix = "program identifier = "
-            guard line.hasPrefix(prefix) else {
-                continue
-            }
-            let value = String(line.dropFirst(prefix.count))
-            if let modeStart = value.range(of: " (mode:") {
-                return String(value[..<modeStart.lowerBound])
-            }
-            return value
-        }
-        return nil
-    }
-
     private func performWrite(_ writeOperation: @escaping () async throws -> Void) async throws {
         try await ensureHelperReadyForWrites()
         try await writeOperation()
@@ -311,17 +281,6 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         }
     }
 
-    nonisolated private static func sanitizedErrorMessage(_ error: Error) -> String {
-        let sanitized = error.localizedDescription
-            .replacingOccurrences(of: "\r", with: " ")
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !sanitized.isEmpty else {
-            return "Unknown error"
-        }
-        return String(sanitized.prefix(200))
-    }
-
     nonisolated private static func withConnection<T: Sendable>(
         timeoutSeconds: TimeInterval = Self.xpcTimeoutSeconds,
         _ block: @escaping (PowerHelperXPCProtocol, @escaping (T?, Error?) -> Void) -> Void
@@ -329,13 +288,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         try await withCheckedThrowingContinuation { continuation in
             let connection = NSXPCConnection(machServiceName: PowerHelperConstants.machServiceName, options: .privileged)
             connection.remoteObjectInterface = NSXPCInterface(with: PowerHelperXPCProtocol.self)
-            let retainedConnectionAddress = UInt(bitPattern: Unmanaged.passRetained(connection).toOpaque())
-            let gate = XPCReplyGate(continuation: continuation) {
-                guard let retainedConnection = UnsafeMutableRawPointer(bitPattern: retainedConnectionAddress) else {
-                    return
-                }
-                Unmanaged<NSXPCConnection>.fromOpaque(retainedConnection).takeRetainedValue().invalidate()
-            }
+            let gate = XPCReplyGate(continuation: continuation)
 
             connection.interruptionHandler = {
                 gate.finish(.failure(NSError(
@@ -366,8 +319,10 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             connection.resume()
 
             guard let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
+                connection.invalidate()
                 gate.finish(.failure(error))
             }) as? PowerHelperXPCProtocol else {
+                connection.invalidate()
                 gate.finish(.failure(NSError(
                     domain: "ControlPower.Helper",
                     code: 3,
@@ -377,6 +332,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             }
 
             block(proxy) { value, error in
+                connection.invalidate()
                 if let error {
                     gate.finish(.failure(error))
                     return
@@ -395,41 +351,51 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 }
 
-final class XPCReplyGate<T: Sendable>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<T, Error>?
-    private var timeoutTask: Task<Void, Never>?
-    private let onFinish: @Sendable () -> Void
+private struct XPCReplyGateState<T: Sendable> {
+    var continuation: CheckedContinuation<T, Error>?
+    var timeoutTask: Task<Void, Never>?
+}
+
+final class XPCReplyGate<T: Sendable>: Sendable {
+    private let state: Mutex<XPCReplyGateState<T>>
+    private let onFinish: (@Sendable () -> Void)?
+
+    init(continuation: CheckedContinuation<T, Error>) {
+        self.state = Mutex(XPCReplyGateState(continuation: continuation, timeoutTask: nil))
+        self.onFinish = nil
+    }
 
     init(continuation: CheckedContinuation<T, Error>, onFinish: @escaping @Sendable () -> Void) {
-        self.continuation = continuation
+        self.state = Mutex(XPCReplyGateState(continuation: continuation, timeoutTask: nil))
         self.onFinish = onFinish
     }
 
     func installTimeoutTask(_ task: Task<Void, Never>) {
-        lock.lock()
-        timeoutTask?.cancel()
-        timeoutTask = task
-        lock.unlock()
+        let previousTask = state.withLock { state in
+            let previousTask = state.timeoutTask
+            state.timeoutTask = task
+            return previousTask
+        }
+        previousTask?.cancel()
     }
 
     func finish(_ result: Result<T, Error>) {
-        let continuation: CheckedContinuation<T, Error>
-        let timeoutTask: Task<Void, Never>?
+        let continuationAndTimeout: (CheckedContinuation<T, Error>, Task<Void, Never>?)? = state.withLock { state in
+            guard let continuation = state.continuation else {
+                return nil
+            }
+            state.continuation = nil
+            let timeoutTask = state.timeoutTask
+            state.timeoutTask = nil
+            return (continuation, timeoutTask)
+        }
 
-        lock.lock()
-        guard let currentContinuation = self.continuation else {
-            lock.unlock()
+        guard let (continuation, timeoutTask) = continuationAndTimeout else {
             return
         }
-        continuation = currentContinuation
-        self.continuation = nil
-        timeoutTask = self.timeoutTask
-        self.timeoutTask = nil
-        lock.unlock()
 
         timeoutTask?.cancel()
-        onFinish()
+        onFinish?()
 
         switch result {
         case .success(let value):

@@ -48,117 +48,19 @@ struct MenuBarPanelView: View {
 
     private var statusAndActions: some View {
         VStack(spacing: 16) {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(viewModel.statusTint.color.opacity(0.1))
-                        .frame(width: 44, height: 44)
-
-                    Image(systemName: viewModel.statusIconName)
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(viewModel.statusTint.color)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(viewModel.statusTitle)
-                        .font(.system(.body, weight: .semibold))
-                    Text(viewModel.sourceText)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Toggle("Prevent System Sleep", isOn: disableSleepBinding)
-                    .labelsHidden()
-                    .accessibilityLabel("Prevent System Sleep")
-                    .toggleStyle(.switch)
-                    .disabled(viewModel.isBusy)
-            }
-
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(.purple.opacity(0.1))
-                        .frame(width: 44, height: 44)
-
-                    Image(systemName: "display")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(.purple)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Sleep Display")
-                        .font(.system(.body, weight: .semibold))
-                    Text("Turn off screen instantly")
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Button {
-                    viewModel.sleepDisplay()
-                } label: {
-                    Image(systemName: "power.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(.purple)
-                }
-                .buttonStyle(.plain)
-                .disabled(viewModel.isBusy)
-            }
+            powerStatusRow
+            sleepDisplayRow
 
             if !viewModel.isHelperEnabled {
-                HStack {
-                    Image(systemName: "exclamationmark.shield.fill")
-                        .foregroundStyle(.yellow)
-                    Text("Helper not approved")
-                        .font(.caption2)
-                    Spacer()
-                    Button("Approve") {
-                        SMAppService.openSystemSettingsLoginItems()
-                    }
-                    .controlSize(.small)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.yellow)
-                }
-                .padding(8)
-                .background(Color.yellow.opacity(0.05))
-                .cornerRadius(6)
+                helperApprovalBanner
             }
 
             if viewModel.helperNeedsRepair {
-                HStack {
-                    Image(systemName: "wrench.trianglebadge.exclamationmark")
-                        .foregroundStyle(.orange)
-                    Text("Helper needs repair")
-                        .font(.caption2)
-                    Spacer()
-                    Button("Repair") {
-                        Task { await viewModel.repairDaemon() }
-                    }
-                    .controlSize(.small)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.orange)
-                    .disabled(viewModel.isBusy)
-                }
-                .padding(8)
-                .background(Color.orange.opacity(0.05))
-                .cornerRadius(6)
+                helperRepairBanner
             }
 
             if let error = viewModel.lastError {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                    Text(error)
-                        .font(.caption2)
-                        .lineLimit(2)
-                    Spacer()
-                }
-                .padding(8)
-                .background(Color.red.opacity(0.05))
-                .cornerRadius(6)
+                errorBanner(error)
             }
         }
     }
@@ -187,6 +89,123 @@ struct MenuBarPanelView: View {
     }
 
     // MARK: - Helpers
+
+    private var powerStatusRow: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(viewModel.statusTint.color.opacity(0.1))
+                    .frame(width: 44, height: 44)
+
+                Image(systemName: viewModel.statusIconName)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(viewModel.statusTint.color)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(viewModel.statusTitle)
+                    .font(.system(.body, weight: .semibold))
+                Text(viewModel.sourceText)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Toggle("Prevent System Sleep", isOn: disableSleepBinding)
+                .labelsHidden()
+                .accessibilityLabel("Prevent System Sleep")
+                .toggleStyle(.switch)
+                .disabled(viewModel.isBusy)
+        }
+    }
+
+    private var sleepDisplayRow: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(.purple.opacity(0.1))
+                    .frame(width: 44, height: 44)
+
+                Image(systemName: "display")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(.purple)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Sleep Display")
+                    .font(.system(.body, weight: .semibold))
+                Text("Turn off screen instantly")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                viewModel.sleepDisplay()
+            } label: {
+                Image(systemName: "power.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.purple)
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.isBusy)
+        }
+    }
+
+    private var helperApprovalBanner: some View {
+        HStack {
+            Image(systemName: "exclamationmark.shield.fill")
+                .foregroundStyle(.yellow)
+            Text("Helper not approved")
+                .font(.caption2)
+            Spacer()
+            Button("Approve") {
+                SMAppService.openSystemSettingsLoginItems()
+            }
+            .controlSize(.small)
+            .buttonStyle(.borderedProminent)
+            .tint(.yellow)
+        }
+        .padding(8)
+        .background(Color.yellow.opacity(0.05))
+        .cornerRadius(6)
+    }
+
+    private var helperRepairBanner: some View {
+        HStack {
+            Image(systemName: "wrench.trianglebadge.exclamationmark")
+                .foregroundStyle(.orange)
+            Text("Helper needs repair")
+                .font(.caption2)
+            Spacer()
+            Button("Repair") {
+                Task { await viewModel.repairDaemon() }
+            }
+            .controlSize(.small)
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+            .disabled(viewModel.isBusy)
+        }
+        .padding(8)
+        .background(Color.orange.opacity(0.05))
+        .cornerRadius(6)
+    }
+
+    private func errorBanner(_ error: String) -> some View {
+        HStack {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+            Text(error)
+                .font(.caption2)
+                .lineLimit(2)
+            Spacer()
+        }
+        .padding(8)
+        .background(Color.red.opacity(0.05))
+        .cornerRadius(6)
+    }
 
     private var disableSleepBinding: Binding<Bool> {
         Binding(

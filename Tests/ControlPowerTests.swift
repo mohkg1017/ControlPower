@@ -4,7 +4,7 @@ import Synchronization
 import XCTest
 @testable import ControlPowerCore
 
-final class ControlPowerTests: XCTestCase {
+nonisolated final class ControlPowerTests: XCTestCase {
     @MainActor
     func testViewModelRefreshUpdatesStateFromInjectedClient() async {
         let client = FakePowerDaemonClient()
@@ -55,6 +55,31 @@ final class ControlPowerTests: XCTestCase {
         XCTAssertEqual(client.setDisableSleepCallCount, 1)
         XCTAssertEqual(client.restoreDefaultsCallCount, 1)
         XCTAssertEqual(client.maxConcurrentMutationCalls, 1)
+    }
+
+    @MainActor
+    func testMutationQueueBackpressurePreventsUnboundedGrowth() async {
+        let client = FakePowerDaemonClient()
+        client.holdFetchStatus = true
+        let viewModel = AppViewModel(client: client)
+
+        viewModel.toggleDisableSleep()
+        await client.waitForMutationCallCount(1)
+
+        for _ in 0..<80 {
+            viewModel.toggleDisableSleep()
+        }
+
+        XCTAssertEqual(
+            viewModel.lastError,
+            "Too many pending actions. Please wait for current changes to finish."
+        )
+
+        client.holdFetchStatus = false
+        client.resumeHeldFetchStatus()
+        await client.waitForIdleMutations()
+
+        XCTAssertLessThanOrEqual(client.setDisableSleepCallCount, 65)
     }
 
     @MainActor
@@ -143,6 +168,13 @@ final class ControlPowerTests: XCTestCase {
         await viewModel.refreshStatus()
 
         XCTAssertEqual(client.setDisableSleepCallCount, 0)
+    }
+
+    @MainActor
+    func testLowBatteryProtectionDefaultsEnabledInTestEnvironment() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+        XCTAssertTrue(viewModel.isLowBatteryProtectionEnabled)
     }
 
     @MainActor
@@ -509,7 +541,7 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
         state.withLock { $0.helperEnabled = enabled }
     }
 
-    func isDaemonBroken() -> Bool {
+    func isDaemonBroken() async -> Bool {
         state.withLock { $0.daemonBroken }
     }
 

@@ -32,7 +32,7 @@ struct MainView: View {
             .navigationTitle("ControlPower")
         } detail: {
             ZStack {
-                tahoeBackground(activeTab: selectedTab)
+                tahoeBackground
                 
                 if let selectedTab {
                     switch selectedTab {
@@ -193,8 +193,8 @@ struct MainView: View {
                 Text(viewModel.statusTitle)
                     .font(.title2.bold())
 
-                if let remaining = viewModel.remainingSeconds {
-                    Text("Expires in \(timeString(from: remaining))")
+                if let remainingTimeString = viewModel.remainingTimeString {
+                    Text("Expires in \(remainingTimeString)")
                         .font(.subheadline.monospacedDigit())
                         .foregroundStyle(.orange)
                 } else {
@@ -230,7 +230,7 @@ struct MainView: View {
                         Button {
                             viewModel.startTimer(minutes: mins)
                         } label: {
-                            Text(mins >= 60 ? "\(mins/60)h" : "\(mins)m")
+                            Text(AppViewModel.durationLabel(for: mins))
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
@@ -344,9 +344,7 @@ struct MainView: View {
             Spacer()
 
             Button {
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(viewModel.snapshot.summary, forType: .string)
+                viewModel.copyStatusToClipboard()
             } label: {
                 Label("Copy Output", systemImage: "doc.on.doc")
             }
@@ -403,7 +401,7 @@ struct MainView: View {
         }
     }
 
-    private func tahoeBackground(activeTab: Tab?) -> some View {
+    private var tahoeBackground: some View {
         ZStack {
             Color(nsColor: .windowBackgroundColor)
             AnimatedTahoeBackground()
@@ -473,16 +471,6 @@ struct MainView: View {
 
     // MARK: - Helpers
 
-    private func timeString(from totalSeconds: Int) -> String {
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        let seconds = totalSeconds % 60
-        if hours > 0 {
-            return String(format: "%dh %02dm %02ds", hours, minutes, seconds)
-        }
-        return String(format: "%02dm %02ds", minutes, seconds)
-    }
-
     private var helperEnabledBinding: Binding<Bool> {
         Binding(
             get: { viewModel.isHelperEnabled },
@@ -505,13 +493,14 @@ extension PowerStatusTint {
 private struct AnimatedTahoeBackground: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.controlActiveState) private var controlActiveState
 
     var body: some View {
-        if reduceMotion || scenePhase != .active {
+        if reduceMotion || scenePhase != .active || controlActiveState != .key {
             StaticMeshLayer()
                 .allowsHitTesting(false)
         } else {
-            TimelineView(.periodic(from: .now, by: 1.0 / 6.0)) { context in
+            TimelineView(.periodic(from: .now, by: 0.5)) { context in
                 AnimatedMeshLayer(phase: context.date.timeIntervalSinceReferenceDate)
             }
             .allowsHitTesting(false)
@@ -521,37 +510,39 @@ private struct AnimatedTahoeBackground: View {
 
 private struct AnimatedMeshLayer: View {
     let phase: TimeInterval
+    private static let colors: [Color] = [
+        .accentColor.opacity(0.1), .accentColor.opacity(0.05), .purple.opacity(0.1),
+        .blue.opacity(0.05), .accentColor.opacity(0.15), .blue.opacity(0.1),
+        .purple.opacity(0.05), .blue.opacity(0.05), .accentColor.opacity(0.1)
+    ]
 
     var body: some View {
         let x = Float(0.5 + (sin(phase * 0.5) * 0.3))
         let y = Float(0.5 + (cos(phase * 0.4) * 0.3))
-        let points: [SIMD2<Float>] = [
+        MeshGradient(width: 3, height: 3, points: [
             .init(0, 0), .init(0.5, 0), .init(1, 0),
             .init(0, 0.5), .init(x, y), .init(1, 0.5),
             .init(0, 1), .init(0.5, 1), .init(1, 1)
-        ]
-
-        MeshGradient(width: 3, height: 3, points: points, colors: [
-            .accentColor.opacity(0.1), .accentColor.opacity(0.05), .purple.opacity(0.1),
-            .blue.opacity(0.05), .accentColor.opacity(0.15), .blue.opacity(0.1),
-            .purple.opacity(0.05), .blue.opacity(0.05), .accentColor.opacity(0.1)
-        ])
+        ], colors: Self.colors)
         .ignoresSafeArea()
         .blur(radius: 40)
     }
 }
 
 private struct StaticMeshLayer: View {
+    private static let points: [SIMD2<Float>] = [
+        .init(0, 0), .init(0.5, 0), .init(1, 0),
+        .init(0, 0.5), .init(0.5, 0.5), .init(1, 0.5),
+        .init(0, 1), .init(0.5, 1), .init(1, 1)
+    ]
+    private static let colors: [Color] = [
+        .accentColor.opacity(0.1), .accentColor.opacity(0.05), .purple.opacity(0.1),
+        .blue.opacity(0.05), .accentColor.opacity(0.15), .blue.opacity(0.1),
+        .purple.opacity(0.05), .blue.opacity(0.05), .accentColor.opacity(0.1)
+    ]
+
     var body: some View {
-        MeshGradient(width: 3, height: 3, points: [
-            .init(0, 0), .init(0.5, 0), .init(1, 0),
-            .init(0, 0.5), .init(0.5, 0.5), .init(1, 0.5),
-            .init(0, 1), .init(0.5, 1), .init(1, 1)
-        ], colors: [
-            .accentColor.opacity(0.1), .accentColor.opacity(0.05), .purple.opacity(0.1),
-            .blue.opacity(0.05), .accentColor.opacity(0.15), .blue.opacity(0.1),
-            .purple.opacity(0.05), .blue.opacity(0.05), .accentColor.opacity(0.1)
-        ])
+        MeshGradient(width: 3, height: 3, points: Self.points, colors: Self.colors)
         .ignoresSafeArea()
         .blur(radius: 40)
     }

@@ -41,22 +41,41 @@ public struct PMSetSnapshot: Equatable, Sendable {
 
 public enum PMSetParser {
     public static func parse(_ text: String) -> PMSetSnapshot {
-        PMSetSnapshot(
-            disableSleep: parseBooleanValue(key: "SleepDisabled", in: text),
-            lidWake: parseBooleanValue(key: "lidwake", in: text),
+        var disableSleep: Bool?
+        var lidWake: Bool?
+
+        for line in text.split(whereSeparator: \.isNewline) {
+            if disableSleep == nil {
+                disableSleep = parseBooleanValue(key: "SleepDisabled", inLine: line)
+            }
+            if lidWake == nil {
+                lidWake = parseBooleanValue(key: "lidwake", inLine: line)
+            }
+            if disableSleep != nil && lidWake != nil {
+                break
+            }
+        }
+
+        return PMSetSnapshot(
+            disableSleep: disableSleep,
+            lidWake: lidWake,
             summary: text.trimmingCharacters(in: .whitespacesAndNewlines)
         )
     }
 
-    private static func parseBooleanValue(key: String, in text: String) -> Bool? {
-        for line in text.split(whereSeparator: \.isNewline) {
-            let parts = line.split(whereSeparator: \.isWhitespace)
-            guard parts.count >= 2 else { continue }
-            if parts[0] == key {
-                if parts[1] == "1" { return true }
-                if parts[1] == "0" { return false }
-            }
+    private static func parseBooleanValue(key: String, inLine line: Substring) -> Bool? {
+        let trimmed = line.drop(while: \.isWhitespace)
+        guard trimmed.hasPrefix(key) else {
+            return nil
         }
+
+        let valueSlice = trimmed.dropFirst(key.count).drop(while: \.isWhitespace)
+        guard let value = valueSlice.first else {
+            return nil
+        }
+
+        if value == "1" { return true }
+        if value == "0" { return false }
         return nil
     }
 }
