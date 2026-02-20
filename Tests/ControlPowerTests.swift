@@ -598,6 +598,41 @@ nonisolated final class ControlPowerTests: XCTestCase {
         XCTAssertTrue(message.contains("Current helper status: Requires Approval"))
     }
 
+    func testIsIgnorableBootoutFailureAcceptsSuccessfulResult() {
+        let result = TimedProcessResult(success: true, output: "", timedOut: false)
+        XCTAssertTrue(PowerDaemonClient.isIgnorableBootoutFailure(result))
+    }
+
+    func testIsIgnorableBootoutFailureRejectsTimeout() {
+        let result = TimedProcessResult(success: false, output: "Command timed out", timedOut: true)
+        XCTAssertFalse(PowerDaemonClient.isIgnorableBootoutFailure(result))
+    }
+
+    func testIsIgnorableBootoutFailureAcceptsMissingServiceOutput() {
+        let result = TimedProcessResult(
+            success: false,
+            output: "Boot-out failed: 3: No such process",
+            timedOut: false
+        )
+        XCTAssertTrue(PowerDaemonClient.isIgnorableBootoutFailure(result))
+    }
+
+    func testIsIgnorableUnregisterFailureDescriptionRecognizesMissingService() {
+        XCTAssertTrue(
+            PowerDaemonClient.isIgnorableUnregisterFailureDescription(
+                "Operation failed: Could not find service"
+            )
+        )
+    }
+
+    func testIsIgnorableUnregisterFailureDescriptionRejectsUnexpectedErrors() {
+        XCTAssertFalse(
+            PowerDaemonClient.isIgnorableUnregisterFailureDescription(
+                "Operation failed: permission denied"
+            )
+        )
+    }
+
     func testXPCReplyGateCancelsInstalledTimeoutTask() async throws {
         let value = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int, Error>) in
             let gate = XPCReplyGate(continuation: continuation) {}

@@ -260,7 +260,6 @@ public final class AppViewModel {
         isBusy = true
         do {
             try await client.repairDaemon()
-            helperNeedsRepair = false
             lastError = nil
         } catch {
             lastError = "Helper repair failed: \(error.controlPowerSanitizedDescription)"

@@ -161,14 +161,60 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     public func repairDaemon() async throws {
-        await bootoutDaemon()
-        _ = try? await runDetachedUtilityOperation {
-            try SMAppService.daemon(plistName: PowerHelperConstants.daemonPlistName).unregister()
+        if let bootoutResult = await bootoutDaemon(), !Self.isIgnorableBootoutFailure(bootoutResult) {
+            let description = bootoutResult.timedOut
+                ? "launchctl bootout timed out while repairing the helper daemon"
+                : (bootoutResult.output.isEmpty ? "launchctl bootout failed while repairing the helper daemon" : bootoutResult.output)
+            throw NSError(
+                domain: "ControlPower.Helper",
+                code: 10,
+                userInfo: [NSLocalizedDescriptionKey: description]
+            )
         }
+
+        do {
+            try await runDetachedUtilityOperation {
+                try SMAppService.daemon(plistName: PowerHelperConstants.daemonPlistName).unregister()
+            }
+        } catch {
+            if !Self.isIgnorableUnregisterFailureDescription(error.controlPowerSanitizedDescription) {
+                throw error
+            }
+        }
+
         try? await Task.sleep(for: .seconds(1))
         try await runDetachedUtilityOperation {
             try SMAppService.daemon(plistName: PowerHelperConstants.daemonPlistName).register()
         }
+
+        let status = daemonService.status
+        guard Self.helperStatusAllowsWrites(status) else {
+            throw NSError(
+                domain: "ControlPower.Helper",
+                code: 11,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Helper repair completed, but helper status is \(Self.daemonStatusDescription(status))."
+                ]
+            )
+        }
+
+        let helperReachable = try await Self.pingHelper(timeoutSeconds: Self.xpcProbeTimeoutSeconds)
+        guard helperReachable else {
+            throw NSError(
+                domain: "ControlPower.Helper",
+                code: 12,
+                userInfo: [NSLocalizedDescriptionKey: "Helper daemon is still unreachable after repair."]
+            )
+        }
+
+        if await isDaemonBroken() {
+            throw NSError(
+                domain: "ControlPower.Helper",
+                code: 13,
+                userInfo: [NSLocalizedDescriptionKey: "Helper daemon still reports a launch failure after repair."]
+            )
+        }
+
         Self.clearLocalSnapshotCache()
     }
 
@@ -377,6 +423,26 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         }
     }
 
+    nonisolated static func isIgnorableBootoutFailure(_ result: TimedProcessResult) -> Bool {
+        if result.success {
+            return true
+        }
+        if result.timedOut {
+            return false
+        }
+        return isIgnorableUnregisterFailureDescription(result.output)
+    }
+
+    nonisolated static func isIgnorableUnregisterFailureDescription(_ description: String) -> Bool {
+        let normalizedDescription = description.lowercased()
+        return normalizedDescription.contains("no such process")
+            || normalizedDescription.contains("not loaded")
+            || normalizedDescription.contains("not registered")
+            || normalizedDescription.contains("not found")
+            || normalizedDescription.contains("unknown service")
+            || normalizedDescription.contains("could not find service")
+    }
+
     nonisolated private static func validateHelperTrust() throws {
         let cachedState = helperTrustCache.withLock { state -> (isFresh: Bool, validationError: String?) in
             guard let checkedAt = state.checkedAt else {
@@ -434,11 +500,20 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             timeoutSeconds: registrationProbeTimeoutSeconds
         ).run(arguments: ["print", "system/\(PowerHelperConstants.daemonLabel)"])
 
-        guard commandResult.success,
-              let daemonPath = helperExecutablePath(fromLaunchctlOutput: commandResult.output) else {
-            return nil
+        if commandResult.success,
+           let daemonPath = helperExecutablePath(fromLaunchctlOutput: commandResult.output) {
+            return URL(fileURLWithPath: daemonPath)
         }
-        return URL(fileURLWithPath: daemonPath)
+
+        // macOS 26+: launchctl print no longer exposes an absolute path for
+        // SMAppService daemons. Fall back to the known bundle-relative location.
+        let bundleHelperURL = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Resources/ControlPowerHelper")
+        if FileManager.default.isExecutableFile(atPath: bundleHelperURL.path) {
+            return bundleHelperURL
+        }
+
+        return nil
     }
 
     nonisolated static func helperExecutablePath(fromLaunchctlOutput output: String) -> String? {
@@ -491,9 +566,9 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         }
     }
 
-    nonisolated private func bootoutDaemon() async {
+    nonisolated private func bootoutDaemon() async -> TimedProcessResult? {
         guard Self.launchctlValidationError == nil else {
-            return
+            return nil
         }
         let cancellation = TimedProcessCancellation()
         let task = Task.detached(priority: .utility) {
@@ -505,7 +580,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
                 cancellation: cancellation
             )
         }
-        _ = await withTaskCancellationHandler {
+        return await withTaskCancellationHandler {
             await task.value
         } onCancel: {
             cancellation.cancel()

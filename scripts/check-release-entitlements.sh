@@ -67,7 +67,9 @@ check_allowed_entitlements() {
   local entitlement_keys=()
   local key
 
-  mapfile -t entitlement_keys < <(printf '%s\n' "$entitlements_xml" | sed -n 's@.*<key>\(.*\)</key>.*@\1@p')
+  while IFS= read -r key; do
+    entitlement_keys+=("$key")
+  done < <(printf '%s\n' "$entitlements_xml" | sed -n 's@.*<key>\(.*\)</key>.*@\1@p')
 
   if (( ${#entitlement_keys[@]} == 0 )); then
     return

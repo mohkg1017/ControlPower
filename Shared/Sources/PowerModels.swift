@@ -122,7 +122,7 @@ public enum PMSetParser {
 
 enum SystemExecutableValidator {
     private static let pmsetRequirementString = "anchor apple and identifier \"com.apple.pmset\""
-    private static let launchctlRequirementString = "anchor apple and identifier \"com.apple.launchctl\""
+    private static let launchctlRequirementString = "anchor apple and identifier \"com.apple.xpc.launchctl\""
 
     static func validateExecutable(at url: URL) -> String? {
         validateExecutable(
