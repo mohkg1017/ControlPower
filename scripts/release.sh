@@ -155,7 +155,7 @@ if [[ ! -f "$HELPER_PATH" ]]; then
 fi
 
 echo "Signing app with: $DEVELOPER_ID_APP"
-/usr/bin/codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APP" "$HELPER_PATH"
+/usr/bin/codesign --force --options runtime --timestamp --identifier "com.moe.controlpower.helper.bin" --sign "$DEVELOPER_ID_APP" "$HELPER_PATH"
 
 if [[ -d "$ARCHIVE_APP_PATH/Contents/Frameworks" ]]; then
   while IFS= read -r -d '' framework; do

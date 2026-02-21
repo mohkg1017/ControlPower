@@ -509,6 +509,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				OTHER_CODE_SIGN_FLAGS = "--identifier com.moe.controlpower.helper.bin";
 				PRODUCT_BUNDLE_IDENTIFIER = com.moe.controlpower.helper.bin;
 				PRODUCT_NAME = ControlPowerHelper;
 				SDKROOT = macosx;
@@ -572,6 +573,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				OTHER_CODE_SIGN_FLAGS = "--identifier com.moe.controlpower.helper.bin";
 				PRODUCT_BUNDLE_IDENTIFIER = com.moe.controlpower.helper.bin;
 				PRODUCT_NAME = ControlPowerHelper;
 				SDKROOT = macosx;
@@ -609,6 +611,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				OTHER_CODE_SIGN_FLAGS = "--identifier com.moe.controlpower.helper.bin";
 				PRODUCT_BUNDLE_IDENTIFIER = com.moe.controlpower.helper.bin;
 				PRODUCT_NAME = ControlPowerHelper;
 				SDKROOT = macosx;

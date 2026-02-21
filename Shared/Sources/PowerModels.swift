@@ -51,6 +51,13 @@ public enum CodeSigningRequirementBuilder {
         return signedBinaryRequirementString(identifier: bundleIdentifier, teamIdentifier: teamIdentifier)
     }
 
+    public static func helperExecutableRequirementString(teamIdentifier: String?) -> String {
+        signedBinaryRequirementString(
+            identifier: PowerHelperConstants.helperExecutableIdentifier,
+            teamIdentifier: teamIdentifier
+        )
+    }
+
     public static func requirement(from requirementString: String) -> SecRequirement? {
         var requirement: SecRequirement?
         let status = SecRequirementCreateWithString(requirementString as CFString, SecCSFlags(), &requirement)
@@ -147,10 +154,7 @@ enum SystemExecutableValidator {
         validateExecutable(
             at: url,
             executableName: "ControlPowerHelper",
-            requirementString: CodeSigningRequirementBuilder.signedBinaryRequirementString(
-                identifier: PowerHelperConstants.helperExecutableIdentifier,
-                teamIdentifier: teamIdentifier
-            )
+            requirementString: CodeSigningRequirementBuilder.helperExecutableRequirementString(teamIdentifier: teamIdentifier)
         )
     }
 

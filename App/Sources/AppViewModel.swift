@@ -258,15 +258,21 @@ public final class AppViewModel {
 
     public func repairDaemon() async {
         isBusy = true
+        var repairErrorMessage: String?
         do {
             try await client.repairDaemon()
             lastError = nil
         } catch {
-            lastError = "Helper repair failed: \(error.controlPowerSanitizedDescription)"
+            let message = helperRepairFailureMessage(for: error)
+            repairErrorMessage = message
+            lastError = message
         }
         isHelperEnabled = client.isHelperEnabled()
         isBusy = false
         await refreshStatus(force: true)
+        if let repairErrorMessage {
+            lastError = repairErrorMessage
+        }
     }
 
     public func toggleHelper() {
@@ -516,6 +522,18 @@ public final class AppViewModel {
             try await viewModel.client.setDisableSleep(enabled)
             try await viewModel.refreshSnapshotFromClient()
         }
+    }
+
+    private func helperRepairFailureMessage(for error: Error) -> String {
+        let sanitized = error.controlPowerSanitizedDescription
+        let normalized = sanitized.lowercased()
+        if normalized.contains("launch constraint violation")
+            || normalized.contains("code-signing")
+            || normalized.contains("code signature")
+            || normalized.contains("ex_config") {
+            return "Helper repair failed: macOS blocked the helper launch due to a signing/launch constraint issue. Reinstall /Applications/ControlPower.app and avoid running Debug and release builds at the same time."
+        }
+        return "Helper repair failed: \(sanitized)"
     }
 
     private func refreshSnapshotFromClient() async throws {

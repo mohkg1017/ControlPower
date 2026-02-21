@@ -142,15 +142,11 @@ struct MenuBarPanelView: View {
 
             Spacer()
 
-            Button {
-                viewModel.sleepDisplay()
-            } label: {
-                Image(systemName: "power.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(.purple)
-            }
-            .buttonStyle(.plain)
-            .disabled(viewModel.isBusy)
+            Toggle("Sleep Display", isOn: sleepDisplayBinding)
+                .labelsHidden()
+                .accessibilityLabel("Sleep Display")
+                .toggleStyle(.switch)
+                .disabled(viewModel.isBusy)
         }
     }
 
@@ -205,6 +201,13 @@ struct MenuBarPanelView: View {
         .padding(8)
         .background(Color.red.opacity(0.05))
         .cornerRadius(6)
+    }
+
+    private var sleepDisplayBinding: Binding<Bool> {
+        Binding(
+            get: { false },
+            set: { if $0 { viewModel.sleepDisplay() } }
+        )
     }
 
     private var disableSleepBinding: Binding<Bool> {

@@ -41,6 +41,14 @@ private struct HelperTrustCacheState {
     var validationError: String?
 }
 
+struct HelperLaunchDiagnostics: Equatable, Sendable {
+    var spawnFailed: Bool
+    var launchConstraintViolation: Bool
+    var lastExitCode: Int?
+    var lastExitDescription: String?
+    var parentBundleIdentifier: String?
+}
+
 private struct XPCConnectionCancellationState<T: Sendable> {
     var gate: XPCReplyGate<T>?
 }
@@ -83,6 +91,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     nonisolated private static let launchctlURL = URL(fileURLWithPath: "/bin/launchctl")
     nonisolated private static let xpcTimeoutSeconds: TimeInterval = 18
     nonisolated private static let xpcProbeTimeoutSeconds: TimeInterval = 5
+    nonisolated private static let repairProbeTimeoutSeconds: TimeInterval = 12
     nonisolated private static let localPMSetTimeoutSeconds: TimeInterval = 8
     nonisolated private static let registrationProbeTimeoutSeconds: TimeInterval = 3
     nonisolated private static let localSnapshotCacheTTLSeconds: TimeInterval = 5
@@ -134,30 +143,14 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             }
         }
         Self.clearLocalSnapshotCache()
+        Self.clearHelperTrustCache()
     }
 
     public func isDaemonBroken() async -> Bool {
         let service = daemonService
         guard service.status == .enabled else { return false }
-        guard Self.launchctlValidationError == nil else { return false }
-        let cancellation = TimedProcessCancellation()
-        let task = Task.detached(priority: .utility) {
-            let result = TimedProcessRunner(
-                executableURL: Self.launchctlURL,
-                timeoutSeconds: Self.registrationProbeTimeoutSeconds
-            ).run(
-                arguments: ["print", "system/\(PowerHelperConstants.daemonLabel)"],
-                cancellation: cancellation
-            )
-            guard result.success else { return false }
-            return result.output.contains("spawn failed") || result.output.contains("EX_CONFIG")
-        }
-        return await withTaskCancellationHandler {
-            await task.value
-        } onCancel: {
-            cancellation.cancel()
-            task.cancel()
-        }
+        guard let diagnostics = await Self.fetchHelperLaunchDiagnostics() else { return false }
+        return diagnostics.spawnFailed || diagnostics.launchConstraintViolation
     }
 
     public func repairDaemon() async throws {
@@ -198,8 +191,36 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             )
         }
 
-        let helperReachable = try await Self.pingHelper(timeoutSeconds: Self.xpcProbeTimeoutSeconds)
+        Self.clearHelperTrustCache()
+        do {
+            try Self.validateHelperTrust(preferBundleHelperPath: true)
+        } catch {
+            throw NSError(
+                domain: "ControlPower.Helper",
+                code: 14,
+                userInfo: [NSLocalizedDescriptionKey: "Helper signature validation still failed after repair: \(error.controlPowerSanitizedDescription)"]
+            )
+        }
+
+        if let launchFailureError = await Self.helperLaunchFailureError() {
+            throw launchFailureError
+        }
+
+        // launchd may apply a short crash backoff after helper restart attempts.
+        // Use a longer probe window during repair so we don't fail prematurely.
+        let helperReachable: Bool
+        do {
+            helperReachable = try await Self.pingHelper(timeoutSeconds: Self.repairProbeTimeoutSeconds)
+        } catch {
+            if let launchFailureError = await Self.helperLaunchFailureError() {
+                throw launchFailureError
+            }
+            throw error
+        }
         guard helperReachable else {
+            if let launchFailureError = await Self.helperLaunchFailureError() {
+                throw launchFailureError
+            }
             throw NSError(
                 domain: "ControlPower.Helper",
                 code: 12,
@@ -207,12 +228,8 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             )
         }
 
-        if await isDaemonBroken() {
-            throw NSError(
-                domain: "ControlPower.Helper",
-                code: 13,
-                userInfo: [NSLocalizedDescriptionKey: "Helper daemon still reports a launch failure after repair."]
-            )
+        if let launchFailureError = await Self.helperLaunchFailureError() {
+            throw launchFailureError
         }
 
         Self.clearLocalSnapshotCache()
@@ -393,6 +410,13 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         }
     }
 
+    nonisolated private static func clearHelperTrustCache() {
+        helperTrustCache.withLock { state in
+            state.checkedAt = nil
+            state.validationError = nil
+        }
+    }
+
     nonisolated static func helperWriteReadinessError(
         status: SMAppService.Status,
         helperReachable: Bool
@@ -430,7 +454,15 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         if result.timedOut {
             return false
         }
-        return isIgnorableUnregisterFailureDescription(result.output)
+        return isIgnorableBootoutFailureDescription(result.output)
+    }
+
+    nonisolated static func isIgnorableBootoutFailureDescription(_ description: String) -> Bool {
+        let normalizedDescription = description.lowercased()
+        if normalizedDescription.contains("operation not permitted") || normalizedDescription.contains("not permitted") {
+            return true
+        }
+        return isIgnorableUnregisterFailureDescription(description)
     }
 
     nonisolated static func isIgnorableUnregisterFailureDescription(_ description: String) -> Bool {
@@ -443,7 +475,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             || normalizedDescription.contains("could not find service")
     }
 
-    nonisolated private static func validateHelperTrust() throws {
+    nonisolated private static func validateHelperTrust(preferBundleHelperPath: Bool = false) throws {
         let cachedState = helperTrustCache.withLock { state -> (isFresh: Bool, validationError: String?) in
             guard let checkedAt = state.checkedAt else {
                 return (false, nil)
@@ -464,7 +496,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             return
         }
 
-        let validationError = validateHelperTrustUncached()
+        let validationError = validateHelperTrustUncached(preferBundleHelperPath: preferBundleHelperPath)
         helperTrustCache.withLock { state in
             state.checkedAt = Date()
             state.validationError = validationError
@@ -479,12 +511,14 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         }
     }
 
-    nonisolated private static func validateHelperTrustUncached() -> String? {
+    nonisolated private static func validateHelperTrustUncached(
+        preferBundleHelperPath: Bool = false
+    ) -> String? {
         if let launchctlValidationError {
             return launchctlValidationError
         }
 
-        guard let executableURL = helperExecutableURL() else {
+        guard let executableURL = helperExecutableURL(preferBundleHelperPath: preferBundleHelperPath) else {
             return "Unable to resolve helper executable path for signature validation"
         }
 
@@ -494,7 +528,11 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         )
     }
 
-    nonisolated private static func helperExecutableURL() -> URL? {
+    nonisolated private static func helperExecutableURL(preferBundleHelperPath: Bool = false) -> URL? {
+        if preferBundleHelperPath, let bundleHelperURL = bundleHelperExecutableURL() {
+            return bundleHelperURL
+        }
+
         let commandResult = TimedProcessRunner(
             executableURL: launchctlURL,
             timeoutSeconds: registrationProbeTimeoutSeconds
@@ -507,13 +545,15 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
 
         // macOS 26+: launchctl print no longer exposes an absolute path for
         // SMAppService daemons. Fall back to the known bundle-relative location.
-        let bundleHelperURL = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Resources/ControlPowerHelper")
-        if FileManager.default.isExecutableFile(atPath: bundleHelperURL.path) {
-            return bundleHelperURL
-        }
+        return bundleHelperExecutableURL()
+    }
 
-        return nil
+    nonisolated private static func bundleHelperExecutableURL() -> URL? {
+        let bundleHelperURL = Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/ControlPowerHelper")
+        guard FileManager.default.isExecutableFile(atPath: bundleHelperURL.path) else {
+            return nil
+        }
+        return bundleHelperURL
     }
 
     nonisolated static func helperExecutablePath(fromLaunchctlOutput output: String) -> String? {
@@ -531,7 +571,66 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         return nil
     }
 
+    nonisolated static func helperLaunchDiagnostics(fromLaunchctlOutput output: String) -> HelperLaunchDiagnostics {
+        let normalizedOutput = output.lowercased()
+        let spawnFailed = normalizedOutput.contains("job state = spawn failed")
+            || normalizedOutput.contains("spawn failed")
+        var lastExitCode: Int?
+        var lastExitDescription: String?
+        var parentBundleIdentifier: String?
+
+        for line in output.split(whereSeparator: \.isNewline) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+
+            if parentBundleIdentifier == nil,
+               let parentBundleValue = scalarValue(forKey: "parent bundle identifier", inLaunchctlLine: trimmed),
+               !parentBundleValue.isEmpty {
+                parentBundleIdentifier = parentBundleValue
+            }
+
+            if lastExitCode == nil,
+               let exitDetails = scalarValue(forKey: "last exit code", inLaunchctlLine: trimmed),
+               !exitDetails.isEmpty {
+                if let separatorIndex = exitDetails.firstIndex(of: ":") {
+                    let codeText = exitDetails[..<separatorIndex].trimmingCharacters(in: .whitespaces)
+                    lastExitCode = Int(codeText)
+                    let descriptionStart = exitDetails.index(after: separatorIndex)
+                    let description = exitDetails[descriptionStart...].trimmingCharacters(in: .whitespaces)
+                    lastExitDescription = description.isEmpty ? nil : description
+                } else {
+                    lastExitCode = Int(exitDetails.trimmingCharacters(in: .whitespaces))
+                }
+            }
+        }
+
+        let launchConstraintViolation =
+            normalizedOutput.contains("launch constraint violation")
+            || normalizedOutput.contains("code signature invalid")
+            || (spawnFailed && lastExitCode == 78)
+            || (lastExitDescription?.lowercased().contains("ex_config") ?? false)
+
+        return HelperLaunchDiagnostics(
+            spawnFailed: spawnFailed,
+            launchConstraintViolation: launchConstraintViolation,
+            lastExitCode: lastExitCode,
+            lastExitDescription: lastExitDescription,
+            parentBundleIdentifier: parentBundleIdentifier
+        )
+    }
+
     nonisolated private static func value(
+        forKey key: String,
+        inLaunchctlLine line: String
+    ) -> String? {
+        guard let scalar = scalarValue(forKey: key, inLaunchctlLine: line),
+              scalar.hasPrefix("/") else {
+            return nil
+        }
+        return scalar
+    }
+
+    nonisolated private static func scalarValue(
         forKey key: String,
         inLaunchctlLine line: String
     ) -> String? {
@@ -543,10 +642,74 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
 
         let valueStart = line.index(line.startIndex, offsetBy: prefix.count)
         let rawValue = line[valueStart...].trimmingCharacters(in: CharacterSet(charactersIn: "\" "))
-        guard rawValue.hasPrefix("/"), !rawValue.isEmpty else {
+        guard !rawValue.isEmpty else {
             return nil
         }
         return rawValue
+    }
+
+    nonisolated private static func fetchHelperLaunchDiagnostics() async -> HelperLaunchDiagnostics? {
+        guard let result = await launchctlDaemonPrintResult() else {
+            return nil
+        }
+        guard result.success else {
+            return nil
+        }
+        return helperLaunchDiagnostics(fromLaunchctlOutput: result.output)
+    }
+
+    nonisolated private static func helperLaunchFailureError() async -> NSError? {
+        guard let diagnostics = await fetchHelperLaunchDiagnostics() else {
+            return nil
+        }
+        return helperLaunchFailureError(from: diagnostics)
+    }
+
+    nonisolated private static func helperLaunchFailureError(from diagnostics: HelperLaunchDiagnostics) -> NSError? {
+        if let currentBundleIdentifier = Bundle.main.bundleIdentifier,
+           let parentBundleIdentifier = diagnostics.parentBundleIdentifier,
+           parentBundleIdentifier != currentBundleIdentifier {
+            return NSError(
+                domain: "ControlPower.Helper",
+                code: 15,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Helper daemon is owned by \(parentBundleIdentifier), but this app is \(currentBundleIdentifier). Reinstall /Applications/ControlPower.app and avoid running Debug and release builds together."
+                ]
+            )
+        }
+
+        if diagnostics.launchConstraintViolation {
+            return NSError(
+                domain: "ControlPower.Helper",
+                code: 16,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Helper launch failed with a launch constraint violation (EX_CONFIG/code-signing). Reinstall /Applications/ControlPower.app and avoid running a Debug build with the same bundle identifier."
+                ]
+            )
+        }
+
+        if diagnostics.spawnFailed {
+            let suffix: String
+            if let lastExitDescription = diagnostics.lastExitDescription {
+                suffix = " Last exit: \(lastExitDescription)."
+            } else if let lastExitCode = diagnostics.lastExitCode {
+                suffix = " Last exit code: \(lastExitCode)."
+            } else {
+                suffix = ""
+            }
+            return NSError(
+                domain: "ControlPower.Helper",
+                code: 17,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Helper daemon failed to spawn.\(suffix) Reinstall /Applications/ControlPower.app if this keeps happening."
+                ]
+            )
+        }
+
+        return nil
     }
 
     private func performWrite(_ writeOperation: @escaping () async throws -> Void) async throws {
@@ -577,6 +740,28 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
                 timeoutSeconds: Self.registrationProbeTimeoutSeconds
             ).run(
                 arguments: ["bootout", "system/\(PowerHelperConstants.daemonLabel)"],
+                cancellation: cancellation
+            )
+        }
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            cancellation.cancel()
+            task.cancel()
+        }
+    }
+
+    nonisolated private static func launchctlDaemonPrintResult() async -> TimedProcessResult? {
+        guard launchctlValidationError == nil else {
+            return nil
+        }
+        let cancellation = TimedProcessCancellation()
+        let task = Task.detached(priority: .utility) {
+            TimedProcessRunner(
+                executableURL: launchctlURL,
+                timeoutSeconds: registrationProbeTimeoutSeconds
+            ).run(
+                arguments: ["print", "system/\(PowerHelperConstants.daemonLabel)"],
                 cancellation: cancellation
             )
         }

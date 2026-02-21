@@ -510,6 +510,40 @@ nonisolated final class ControlPowerTests: XCTestCase {
         XCTAssertNil(PowerDaemonClient.helperExecutablePath(fromLaunchctlOutput: output))
     }
 
+    func testHelperLaunchDiagnosticsDetectsLaunchConstraintViolationFromEXCONFIG() {
+        let output = """
+        system/com.moe.controlpower.helper = {
+            parent bundle identifier = com.moe.controlpower
+            last exit code = 78: EX_CONFIG
+            job state = spawn failed
+        }
+        """
+
+        let diagnostics = PowerDaemonClient.helperLaunchDiagnostics(fromLaunchctlOutput: output)
+
+        XCTAssertTrue(diagnostics.spawnFailed)
+        XCTAssertTrue(diagnostics.launchConstraintViolation)
+        XCTAssertEqual(diagnostics.lastExitCode, 78)
+        XCTAssertEqual(diagnostics.lastExitDescription, "EX_CONFIG")
+        XCTAssertEqual(diagnostics.parentBundleIdentifier, "com.moe.controlpower")
+    }
+
+    func testHelperLaunchDiagnosticsParsesGenericSpawnFailure() {
+        let output = """
+        system/com.moe.controlpower.helper = {
+            last exit code = 1
+            job state = spawn failed
+        }
+        """
+
+        let diagnostics = PowerDaemonClient.helperLaunchDiagnostics(fromLaunchctlOutput: output)
+
+        XCTAssertTrue(diagnostics.spawnFailed)
+        XCTAssertFalse(diagnostics.launchConstraintViolation)
+        XCTAssertEqual(diagnostics.lastExitCode, 1)
+        XCTAssertNil(diagnostics.lastExitDescription)
+    }
+
     func testClientAuthorizationPolicyRejectsMismatchedBundleIdentifier() {
         let policy = ClientAuthorizationPolicy(bundleIdentifier: "com.moe.controlpower", teamIdentifier: "TEAM123")
 
@@ -572,6 +606,24 @@ nonisolated final class ControlPowerTests: XCTestCase {
         XCTAssertNotNil(CodeSigningRequirementBuilder.requirement(from: requirementString ?? ""))
     }
 
+    func testHelperExecutableRequirementStringBuildsExpectedRule() {
+        let requirement = CodeSigningRequirementBuilder.helperExecutableRequirementString(teamIdentifier: "TEAM123")
+
+        XCTAssertEqual(
+            requirement,
+            "anchor apple generic and identifier \"com.moe.controlpower.helper.bin\" and certificate leaf[subject.OU] = \"TEAM123\""
+        )
+    }
+
+    func testHelperExecutableRequirementStringOmitsTeamIdentifierWhenUnavailable() {
+        let requirement = CodeSigningRequirementBuilder.helperExecutableRequirementString(teamIdentifier: nil)
+
+        XCTAssertEqual(
+            requirement,
+            "anchor apple generic and identifier \"com.moe.controlpower.helper.bin\""
+        )
+    }
+
     func testHelperStatusAllowsWritesOnlyWhenEnabled() {
         XCTAssertTrue(PowerDaemonClient.helperStatusAllowsWrites(.enabled))
     }
@@ -612,6 +664,15 @@ nonisolated final class ControlPowerTests: XCTestCase {
         let result = TimedProcessResult(
             success: false,
             output: "Boot-out failed: 3: No such process",
+            timedOut: false
+        )
+        XCTAssertTrue(PowerDaemonClient.isIgnorableBootoutFailure(result))
+    }
+
+    func testIsIgnorableBootoutFailureAcceptsOperationNotPermittedOutput() {
+        let result = TimedProcessResult(
+            success: false,
+            output: "Boot-out failed: 1: Operation not permitted",
             timedOut: false
         )
         XCTAssertTrue(PowerDaemonClient.isIgnorableBootoutFailure(result))
@@ -719,6 +780,62 @@ nonisolated final class ControlPowerTests: XCTestCase {
     }
 
     @MainActor
+    func testRepairDaemonFailurePersistsErrorAfterRefresh() async {
+        let client = FakePowerDaemonClient()
+        client.repairDaemonResult = .failure(FakePowerDaemonClientError.repairFailed)
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "fallback"),
+                source: .localFallback
+            )
+        )
+
+        let viewModel = AppViewModel(client: client)
+        viewModel.helperNeedsRepair = true
+
+        await viewModel.repairDaemon()
+
+        XCTAssertEqual(client.repairDaemonCallCount, 1)
+        XCTAssertEqual(client.fetchStatusCallCount, 1)
+        XCTAssertEqual(viewModel.lastError, "Helper repair failed: repair failed")
+        XCTAssertTrue(viewModel.helperNeedsRepair)
+    }
+
+    @MainActor
+    func testRepairDaemonLaunchConstraintFailureShowsActionableMessage() async {
+        let client = FakePowerDaemonClient()
+        client.repairDaemonResult = .failure(
+            NSError(
+                domain: "ControlPower.Helper",
+                code: 16,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Helper launch failed with a launch constraint violation (EX_CONFIG/code-signing). Reinstall /Applications/ControlPower.app and avoid running a Debug build with the same bundle identifier."
+                ]
+            )
+        )
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "fallback"),
+                source: .localFallback
+            )
+        )
+
+        let viewModel = AppViewModel(client: client)
+        viewModel.helperNeedsRepair = true
+
+        await viewModel.repairDaemon()
+
+        XCTAssertEqual(client.repairDaemonCallCount, 1)
+        XCTAssertEqual(client.fetchStatusCallCount, 1)
+        XCTAssertEqual(
+            viewModel.lastError,
+            "Helper repair failed: macOS blocked the helper launch due to a signing/launch constraint issue. Reinstall /Applications/ControlPower.app and avoid running Debug and release builds at the same time."
+        )
+        XCTAssertTrue(viewModel.helperNeedsRepair)
+    }
+
+    @MainActor
     func testStartupAutoRepairsWhenDaemonBroken() async {
         let client = FakePowerDaemonClient()
         client.daemonBroken = true
@@ -756,6 +873,7 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
                 source: .localFallback
             )
         )
+        var repairDaemonResult: Result<Void, Error> = .success(())
         var helperEnabled = true
         var setHelperEnabledShouldFail = false
         var holdFetchStatus = false
@@ -792,6 +910,11 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
     var fetchStatusResult: Result<PowerHelperStatus, Error> {
         get { state.withLock { $0.fetchStatusResult } }
         set { state.withLock { $0.fetchStatusResult = newValue } }
+    }
+
+    var repairDaemonResult: Result<Void, Error> {
+        get { state.withLock { $0.repairDaemonResult } }
+        set { state.withLock { $0.repairDaemonResult = newValue } }
     }
 
     var helperEnabled: Bool {
@@ -865,15 +988,19 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
     }
 
     func repairDaemon() async throws {
-        let waitContinuation = state.withLock { state -> CheckedContinuation<Void, Never>? in
+        let (waitContinuation, result) = state.withLock { state -> (CheckedContinuation<Void, Never>?, Result<Void, Error>) in
             state.repairDaemonCallCount += 1
+            let waitContinuation: CheckedContinuation<Void, Never>?
             if let wait = state.repairCountWait, state.repairDaemonCallCount >= wait.expected {
                 state.repairCountWait = nil
-                return wait.continuation
+                waitContinuation = wait.continuation
+            } else {
+                waitContinuation = nil
             }
-            return nil
+            return (waitContinuation, state.repairDaemonResult)
         }
         waitContinuation?.resume()
+        try result.get()
     }
 
     @MainActor
@@ -1065,11 +1192,14 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
 
 private enum FakePowerDaemonClientError: LocalizedError, Sendable {
     case approvalMissing
+    case repairFailed
 
     var errorDescription: String? {
         switch self {
         case .approvalMissing:
             return "approval missing"
+        case .repairFailed:
+            return "repair failed"
         }
     }
 }

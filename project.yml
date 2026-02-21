@@ -55,6 +55,7 @@ targets:
       base:
         PRODUCT_NAME: ControlPowerHelper
         PRODUCT_BUNDLE_IDENTIFIER: com.moe.controlpower.helper.bin
+        OTHER_CODE_SIGN_FLAGS: --identifier com.moe.controlpower.helper.bin
         ENABLE_HARDENED_RUNTIME: YES
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: ControlPowerHelper
