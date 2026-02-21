@@ -165,6 +165,7 @@ public final class AppViewModel {
     deinit {
         timerTask?.cancel()
         tearDownBatteryMonitoring()
+        tearDownWakeMonitoring()
     }
 
     public var powerMode: PowerMode {
