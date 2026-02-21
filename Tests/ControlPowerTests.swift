@@ -848,6 +848,116 @@ nonisolated final class ControlPowerTests: XCTestCase {
     }
 
     @MainActor
+    func testDesiredNoSleepDefaultsFalse() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+
+        XCTAssertFalse(viewModel.desiredNoSleep)
+        await Task.yield()
+    }
+
+    @MainActor
+    func testToggleOnSetsDesiredNoSleep() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+
+        viewModel.setDisableSleepEnabled(true)
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+
+        XCTAssertTrue(viewModel.desiredNoSleep)
+    }
+
+    @MainActor
+    func testToggleOffClearsDesiredNoSleep() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+
+        viewModel.setDisableSleepEnabled(true)
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+        viewModel.setDisableSleepEnabled(false)
+        await client.waitForMutationCallCount(2)
+        await client.waitForIdleMutations()
+
+        XCTAssertFalse(viewModel.desiredNoSleep)
+    }
+
+    @MainActor
+    func testRestoreDefaultsClearsDesiredNoSleep() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+
+        viewModel.setDisableSleepEnabled(true)
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+
+        viewModel.restoreDefaults()
+        await client.waitForMutationCallCount(2)
+        await client.waitForIdleMutations()
+
+        XCTAssertFalse(viewModel.desiredNoSleep)
+    }
+
+    @MainActor
+    func testWakeReappliesWhenDesiredAndActualDisagree() async {
+        let client = FakePowerDaemonClient()
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "wake-off"),
+                source: .helper
+            )
+        )
+
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+        viewModel.isLowBatteryProtectionEnabled = false
+        viewModel.setDisableSleepEnabled(true)
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+
+        let mutationCountBeforeWake = client.setDisableSleepCallCount
+        await viewModel.handleSystemWake()
+        await client.waitForMutationCallCount(mutationCountBeforeWake + 1)
+        await client.waitForIdleMutations()
+
+        XCTAssertEqual(client.setDisableSleepCallCount, mutationCountBeforeWake + 1)
+        XCTAssertEqual(client.lastDisableSleepValue, true)
+    }
+
+    @MainActor
+    func testWakeSkipsWhenDesiredFalse() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+
+        await viewModel.handleSystemWake()
+
+        XCTAssertEqual(client.fetchStatusCallCount, 0)
+        XCTAssertEqual(client.setDisableSleepCallCount, 0)
+    }
+
+    @MainActor
+    func testWakeSkipsWhenActualMatchesDesired() async {
+        let client = FakePowerDaemonClient()
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: true, lidWake: true, summary: "wake-on"),
+                source: .helper
+            )
+        )
+
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+        viewModel.snapshot = PMSetSnapshot(disableSleep: true, lidWake: true, summary: "already-on")
+        viewModel.setDisableSleepEnabled(true)
+
+        let setCountBeforeWake = client.setDisableSleepCallCount
+        let fetchCountBeforeWake = client.fetchStatusCallCount
+        await viewModel.handleSystemWake()
+
+        XCTAssertEqual(client.setDisableSleepCallCount, setCountBeforeWake)
+        XCTAssertEqual(client.fetchStatusCallCount, fetchCountBeforeWake + 1)
+    }
+
+    @MainActor
     private func waitForCondition(
         timeoutNanoseconds: UInt64 = 1_000_000_000,
         condition: @escaping @MainActor () -> Bool

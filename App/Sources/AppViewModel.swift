@@ -87,6 +87,8 @@ public final class AppViewModel {
     }
 
     nonisolated private static let lowBatteryProtectionKey = "lowBatteryProtection"
+    nonisolated private static let desiredNoSleepKey = "desiredNoSleep"
+    nonisolated private static let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     nonisolated private static let maxPendingMutations = 64
 
     public var snapshot = PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "No status yet")
@@ -108,15 +110,19 @@ public final class AppViewModel {
             UserDefaults.standard.set(isLowBatteryProtectionEnabled, forKey: Self.lowBatteryProtectionKey)
         }
     }
+    @ObservationIgnored public private(set) var desiredNoSleep: Bool = false
     private var batterySourceRunLoopSource: CFRunLoopSource?
     private var batteryMonitorContextPointer: UnsafeMutableRawPointer?
+    private var wakeObserver: AnyObject?
 
     private let client: ClientOperations
     private let mutationScheduler: MutationScheduler
     private let isTestEnvironment: Bool
     private let shouldPersistLowBatteryProtection: Bool
+    private let shouldPersistDesiredNoSleep: Bool
     private var lowBatteryAutoDisableQueued = false
     private var pendingHelperEnabledRequest: Bool?
+    private var wakeReapplyInFlight = false
     private var hasStarted = false
 
     @MainActor
@@ -141,12 +147,17 @@ public final class AppViewModel {
         self.mutationScheduler = MutationScheduler(maxPendingMutations: Self.maxPendingMutations)
         self.isTestEnvironment = isTestEnvironment
         self.shouldPersistLowBatteryProtection = !isTestEnvironment
+        self.shouldPersistDesiredNoSleep = !isTestEnvironment && !Self.isRunningTests
         self.isLowBatteryProtectionEnabled = isTestEnvironment
             ? true
             : (UserDefaults.standard.object(forKey: Self.lowBatteryProtectionKey) as? Bool ?? true)
+        self.desiredNoSleep = shouldPersistDesiredNoSleep
+            ? (UserDefaults.standard.object(forKey: Self.desiredNoSleepKey) as? Bool ?? false)
+            : false
         self.isHelperEnabled = clientOperations.isHelperEnabled()
         if !isTestEnvironment {
             setupBatteryMonitoring()
+            setupWakeMonitoring()
         }
     }
 
@@ -222,6 +233,7 @@ public final class AppViewModel {
             if self.helperNeedsRepair {
                 await self.repairDaemon()
             }
+            self.reapplyDesiredNoSleepIfNeeded()
         }
     }
 
@@ -384,6 +396,7 @@ public final class AppViewModel {
 
     public func restoreDefaults() {
         cancelTimer()
+        updateDesiredNoSleep(false)
         enqueueOperation("Restore defaults") { viewModel in
             try await viewModel.client.restoreDefaults()
             try await viewModel.refreshSnapshotFromClient()
@@ -451,6 +464,27 @@ public final class AppViewModel {
         }
     }
 
+    private func setupWakeMonitoring() {
+        tearDownWakeMonitoring()
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.handleSystemWake()
+            }
+        } as AnyObject
+    }
+
+    private func tearDownWakeMonitoring() {
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+            self.wakeObserver = nil
+        }
+    }
+
     private func updateBatteryLevelFromSystem() {
         guard
             let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
@@ -505,7 +539,18 @@ public final class AppViewModel {
         setDisableSleepEnabled(false)
     }
 
+    func handleSystemWake() async {
+        guard desiredNoSleep else { return }
+        guard !wakeReapplyInFlight else { return }
+        wakeReapplyInFlight = true
+        defer { wakeReapplyInFlight = false }
+
+        await refreshStatus(force: true)
+        reapplyDesiredNoSleepIfNeeded()
+    }
+
     private func setDisableSleep(_ enabled: Bool) {
+        updateDesiredNoSleep(enabled)
         if let currentValue = snapshot.disableSleep, currentValue == enabled {
             return
         }
@@ -522,6 +567,19 @@ public final class AppViewModel {
             try await viewModel.client.setDisableSleep(enabled)
             try await viewModel.refreshSnapshotFromClient()
         }
+    }
+
+    private func reapplyDesiredNoSleepIfNeeded() {
+        guard desiredNoSleep else { return }
+        guard !helperNeedsRepair else { return }
+        guard snapshot.disableSleep == false else { return }
+        setDisableSleep(true)
+    }
+
+    private func updateDesiredNoSleep(_ desired: Bool) {
+        desiredNoSleep = desired
+        guard shouldPersistDesiredNoSleep else { return }
+        UserDefaults.standard.set(desired, forKey: Self.desiredNoSleepKey)
     }
 
     private func helperRepairFailureMessage(for error: Error) -> String {
