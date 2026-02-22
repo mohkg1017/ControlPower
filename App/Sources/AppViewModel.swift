@@ -180,7 +180,14 @@ public final class AppViewModel {
         return disableSleep ? "ON" : "OFF"
     }
 
+    public var isReapplyingNoSleep: Bool {
+        desiredNoSleep && snapshot.disableSleep == false && !helperNeedsRepair
+    }
+
     public var statusIconName: String {
+        if isReapplyingNoSleep {
+            return "arrow.trianglehead.2.clockwise"
+        }
         switch powerMode {
         case .noSleep: return "moon.zzz.fill"
         case .normal: return "checkmark.circle.fill"
@@ -189,6 +196,9 @@ public final class AppViewModel {
     }
 
     public var statusTitle: String {
+        if isReapplyingNoSleep {
+            return "Re-applying No Sleep…"
+        }
         switch powerMode {
         case .noSleep: return "No Sleep Active"
         case .normal: return "Normal Mode"
@@ -197,6 +207,9 @@ public final class AppViewModel {
     }
 
     public var statusDescription: String {
+        if isReapplyingNoSleep {
+            return "Trying to restore your no-sleep setting."
+        }
         switch powerMode {
         case .noSleep: return "Your Mac will stay awake."
         case .normal: return "Mac follows system sleep settings."
@@ -205,6 +218,9 @@ public final class AppViewModel {
     }
 
     public var statusTint: PowerStatusTint {
+        if isReapplyingNoSleep {
+            return .unknown
+        }
         switch powerMode {
         case .noSleep: return .noSleep
         case .normal: return .normal

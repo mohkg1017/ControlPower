@@ -73,10 +73,12 @@ struct MainView: View {
             VStack(spacing: 4) {
                 Text("Made By Moe")
                     .font(.headline)
-                
-                Link("@mohkg1017", destination: URL(string: "https://x.com/mohkg1017")!)
-                    .font(.subheadline)
-                    .foregroundStyle(Color.accentColor)
+
+                if let profileURL = URL(string: "https://x.com/mohkg1017") {
+                    Link("@mohkg1017", destination: profileURL)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.accentColor)
+                }
             }
             .padding(.top, 10)
             

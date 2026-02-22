@@ -430,6 +430,100 @@ nonisolated final class ControlPowerTests: XCTestCase {
     }
 
     @MainActor
+    func testStartupReappliesWhenDesiredNoSleepPersistedAndActualOff() async {
+        let client = FakePowerDaemonClient()
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "startup-off"),
+                source: .helper
+            )
+        )
+
+        let viewModel = AppViewModel(client: client, isTestEnvironment: false)
+        viewModel.setDisableSleepEnabled(true)
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+
+        let setCountBeforeStartup = client.setDisableSleepCallCount
+        viewModel.startup()
+        await client.waitForMutationCallCount(setCountBeforeStartup + 1)
+        await client.waitForIdleMutations()
+
+        XCTAssertEqual(client.setDisableSleepCallCount, setCountBeforeStartup + 1)
+        XCTAssertEqual(client.lastDisableSleepValue, true)
+    }
+
+    @MainActor
+    func testStartupSkipsReapplyWhenHelperNeedsRepair() async {
+        let client = FakePowerDaemonClient()
+        client.daemonBroken = true
+        client.repairDaemonResult = .failure(FakePowerDaemonClientError.repairFailed)
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "needs-repair"),
+                source: .localFallback
+            )
+        )
+
+        let viewModel = AppViewModel(client: client, isTestEnvironment: false)
+        viewModel.setDisableSleepEnabled(true)
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+
+        let fetchCountBeforeStartup = client.fetchStatusCallCount
+        let setCountBeforeStartup = client.setDisableSleepCallCount
+        viewModel.startup()
+        await client.waitForRepairCallCount(1)
+        await client.waitForFetchStatusCallCount(fetchCountBeforeStartup + 2)
+
+        XCTAssertEqual(client.setDisableSleepCallCount, setCountBeforeStartup)
+        XCTAssertTrue(viewModel.helperNeedsRepair)
+    }
+
+    @MainActor
+    func testStartupSkipsReapplyWhenActualAlreadyOn() async {
+        let client = FakePowerDaemonClient()
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: true, lidWake: true, summary: "already-on"),
+                source: .helper
+            )
+        )
+
+        let viewModel = AppViewModel(client: client, isTestEnvironment: false)
+        viewModel.setDisableSleepEnabled(true)
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+
+        let fetchCountBeforeStartup = client.fetchStatusCallCount
+        let setCountBeforeStartup = client.setDisableSleepCallCount
+        viewModel.startup()
+        await client.waitForFetchStatusCallCount(fetchCountBeforeStartup + 1)
+
+        XCTAssertEqual(client.setDisableSleepCallCount, setCountBeforeStartup)
+    }
+
+    @MainActor
+    func testStatusShowsReapplyingNoSleepWhenDesiredAndActualDisagree() async {
+        let client = FakePowerDaemonClient()
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: true, lidWake: true, summary: "enabled"),
+                source: .helper
+            )
+        )
+
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+        viewModel.setDisableSleepEnabled(true)
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+        viewModel.snapshot = PMSetSnapshot(disableSleep: false, lidWake: true, summary: "drifted")
+
+        XCTAssertTrue(viewModel.isReapplyingNoSleep)
+        XCTAssertEqual(viewModel.statusTitle, "Re-applying No Sleep…")
+    }
+
+    @MainActor
     func testTimerZeroMinutesDisablesNoSleepWhenActive() async {
         let client = FakePowerDaemonClient()
         let viewModel = AppViewModel(client: client)
