@@ -106,6 +106,7 @@ public final class AppViewModel {
     public var remainingSeconds: Int?
     public var selectedDurationMinutes: Int = 60
     private var timerTask: Task<Void, Never>?
+    private var startupTask: Task<Void, Never>?
     private var timerEndDate: Date?
 
     public var batteryLevel: Int = 100
@@ -170,6 +171,7 @@ public final class AppViewModel {
     @MainActor
     deinit {
         timerTask?.cancel()
+        startupTask?.cancel()
         tearDownBatteryMonitoring()
         tearDownWakeMonitoring()
     }
@@ -242,22 +244,35 @@ public final class AppViewModel {
             return
         }
 
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                try await self.client.registerDaemonIfNeeded()
-            } catch {
-                self.lastError = error.controlPowerSanitizedDescription
-            }
-
-            self.isHelperEnabled = self.client.isHelperEnabled()
-            self.helperNeedsRepair = await self.client.isDaemonBroken()
-            await self.refreshStatus()
-            if self.helperNeedsRepair {
-                await self.repairDaemon()
-            }
-            self.reapplyDesiredNoSleepIfNeeded()
+        startupTask = Task { @MainActor [weak self] in
+            await self?.runStartupSequence()
         }
+    }
+
+    @MainActor
+    private func runStartupSequence() async {
+        defer { startupTask = nil }
+
+        do {
+            try await client.registerDaemonIfNeeded()
+        } catch {
+            lastError = error.controlPowerSanitizedDescription
+        }
+        guard !Task.isCancelled else { return }
+
+        isHelperEnabled = client.isHelperEnabled()
+        helperNeedsRepair = await client.isDaemonBroken()
+        guard !Task.isCancelled else { return }
+
+        await refreshStatus()
+        guard !Task.isCancelled else { return }
+
+        if helperNeedsRepair {
+            await repairDaemon()
+            guard !Task.isCancelled else { return }
+        }
+
+        reapplyDesiredNoSleepIfNeeded()
     }
 
     public func refreshStatus(force: Bool = false) async {

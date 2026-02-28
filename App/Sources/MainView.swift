@@ -183,6 +183,7 @@ private struct OverviewTabView: View {
                         .buttonStyle(.bordered)
                         .tint(isSelected ? .orange : .secondary)
                         .accessibilityValue(isSelected ? "Selected" : "Not selected")
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
                     }
                 }
             }
@@ -339,7 +340,7 @@ private struct AdvancedStatusTabView: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .glassEffect(in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.primary.opacity(0.1), lineWidth: 1)
@@ -450,7 +451,9 @@ private struct AnimatedTahoeBackground: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
-            isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
+            Task { @MainActor in
+                isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
+            }
         }
     }
 }

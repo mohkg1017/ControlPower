@@ -48,7 +48,10 @@ public final class TimedProcessCancellation: Sendable {
     public func cancel() {
         let processIdentifier = state.withLock { state -> pid_t? in
             state.isCancelled = true
-            return state.processIdentifier
+            let processIdentifier = state.processIdentifier
+            // Clear before signaling to reduce PID-reuse race windows.
+            state.processIdentifier = nil
+            return processIdentifier
         }
         guard let processIdentifier else { return }
         kill(processIdentifier, SIGTERM)

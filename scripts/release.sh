@@ -43,7 +43,8 @@ if [[ -f "$ROOT_DIR/project.yml" ]]; then
   if command -v xcodegen >/dev/null 2>&1; then
     xcodegen generate --spec "$ROOT_DIR/project.yml"
   else
-    echo "warning: xcodegen not found; skipping project regeneration"
+    echo "error: xcodegen is required when project.yml is present"
+    exit 1
   fi
 fi
 
@@ -104,14 +105,14 @@ if [[ "${SKIP_TESTS:-0}" != "1" ]]; then
     run_exit_code="$?"
     if is_xctest_bundle_load_failure "$BUILD_DIR/test-attempt-1.log"; then
       echo "warning: xctest could not load ControlPowerTests.xctest. Retrying once with fresh test artifacts..."
-      rm -rf "$DERIVED/Build/Products/Debug/ControlPowerTests.xctest" "$DERIVED/Logs/Test"
+      rm -rf "$DERIVED/Build/Products/$TEST_CONFIGURATION/ControlPowerTests.xctest" "$DERIVED/Logs/Test"
 
       if run_tests_once 2; then
         :
       else
         second_run_exit_code="$?"
         if is_xctest_bundle_load_failure "$BUILD_DIR/test-attempt-2.log"; then
-          if [[ "${ALLOW_XCTEST_BUNDLE_FLAKE_CONTINUE:-1}" == "1" ]]; then
+          if [[ "${ALLOW_XCTEST_BUNDLE_FLAKE_CONTINUE:-0}" == "1" ]]; then
             echo "warning: repeated xctest bundle-load failure detected. Continuing release without completed tests."
             echo "warning: see $BUILD_DIR/test-attempt-1.log and $BUILD_DIR/test-attempt-2.log"
           else

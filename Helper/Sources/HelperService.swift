@@ -23,7 +23,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
     private let operationQueue = DispatchQueue(label: "com.moe.controlpower.helper.pmset", qos: .utility)
     private let requestActivity = Mutex(RequestActivityState())
     private let sessionTokens = Mutex(OneTimeSessionTokenStore())
-    private let disconnectedConnectionIdentifiers = Mutex(Set<ObjectIdentifier>())
+    private let activeConnectionIdentifiers = Mutex(Set<ObjectIdentifier>())
     private let idleTimer: DispatchSourceTimer
 
     override init() {
@@ -179,11 +179,11 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
 
     nonisolated func clearSessionToken(for connectionIdentifier: ObjectIdentifier) {
         sessionTokens.withLock { $0.clearToken(for: connectionIdentifier) }
-        disconnectedConnectionIdentifiers.withLock { $0.insert(connectionIdentifier) }
+        _ = activeConnectionIdentifiers.withLock { $0.remove(connectionIdentifier) }
     }
 
     nonisolated func markConnectionActive(for connectionIdentifier: ObjectIdentifier) {
-        disconnectedConnectionIdentifiers.withLock { $0.remove(connectionIdentifier) }
+        _ = activeConnectionIdentifiers.withLock { $0.insert(connectionIdentifier) }
     }
 
     nonisolated private func beginRequest() -> Bool {
@@ -234,7 +234,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
     }
 
     nonisolated private func isConnectionDisconnected(_ connectionIdentifier: ObjectIdentifier) -> Bool {
-        disconnectedConnectionIdentifiers.withLock { $0.contains(connectionIdentifier) }
+        !activeConnectionIdentifiers.withLock { $0.contains(connectionIdentifier) }
     }
 
     nonisolated private func runPMSet(arguments: [String]) -> (success: Bool, output: String) {

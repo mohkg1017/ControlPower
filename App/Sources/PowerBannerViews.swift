@@ -108,5 +108,9 @@ struct ErrorBannerView: View {
         .padding(compact ? 8 : 12)
         .background(Color.red.opacity(compact ? 0.05 : 0.1))
         .clipShape(RoundedRectangle(cornerRadius: compact ? 6 : 8))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Error")
+        .accessibilityValue(message)
+        .accessibilityHint("Critical status message")
     }
 }

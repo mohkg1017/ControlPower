@@ -20,7 +20,7 @@ struct MenuBarPanelView: View {
             footer
         }
         .frame(width: 300)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .glassEffect(in: RoundedRectangle(cornerRadius: 14))
     }
 
     private var header: some View {
@@ -36,6 +36,8 @@ struct MenuBarPanelView: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .imageScale(.small)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(viewModel.isBusy)
@@ -90,7 +92,7 @@ struct MenuBarPanelView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.black.opacity(0.03))
+        .background(.thinMaterial)
     }
 
     // MARK: - Helpers
@@ -106,6 +108,7 @@ struct MenuBarPanelView: View {
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(viewModel.statusTint.color)
             }
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(viewModel.statusTitle)
@@ -136,6 +139,7 @@ struct MenuBarPanelView: View {
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(.purple)
             }
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Sleep Display")

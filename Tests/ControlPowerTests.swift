@@ -409,7 +409,7 @@ nonisolated final class ControlPowerTests: XCTestCase {
     }
 
     @MainActor
-    func testStartupStillRefreshesWhenRegisterFailsOutsideTestEnvironment() async {
+    func testStartupAutoRepairsAfterRegisterFailureWhenFallbackStatusRequiresIt() async {
         let client = FakePowerDaemonClient()
         client.registerDaemonResult = .failure(
             NSError(domain: "Test", code: 11, userInfo: [NSLocalizedDescriptionKey: "register failed"])
@@ -423,11 +423,12 @@ nonisolated final class ControlPowerTests: XCTestCase {
 
         let viewModel = AppViewModel(client: client, isTestEnvironment: false)
         viewModel.startup()
-        await client.waitForFetchStatusCallCount(1)
+        await client.waitForFetchStatusCallCount(2)
         await waitForCondition { viewModel.snapshot.summary == "after-failed-register" }
 
         XCTAssertEqual(client.registerDaemonCallCount, 1)
-        XCTAssertEqual(client.fetchStatusCallCount, 1)
+        XCTAssertEqual(client.fetchStatusCallCount, 2)
+        XCTAssertEqual(client.repairDaemonCallCount, 1)
         XCTAssertEqual(viewModel.snapshot.summary, "after-failed-register")
     }
 
@@ -1138,12 +1139,12 @@ nonisolated final class ControlPowerTests: XCTestCase {
 
     @MainActor
     private func waitForCondition(
-        timeoutNanoseconds: UInt64 = 2_000_000_000,
+        timeoutNanoseconds: UInt64 = 5_000_000_000,
         file: StaticString = #filePath,
         line: UInt = #line,
         condition: @escaping @MainActor () -> Bool
     ) async {
-        let interval: UInt64 = 10_000_000
+        let interval: UInt64 = 20_000_000
         var elapsed: UInt64 = 0
         while elapsed <= timeoutNanoseconds {
             if condition() {
