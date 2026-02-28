@@ -85,6 +85,7 @@ public struct TimedProcessRunner: Sendable {
         let terminationGroup = DispatchGroup()
         terminationGroup.enter()
         process.terminationHandler = { _ in
+            cancellation?.clearProcessIdentifier()
             terminationGroup.leave()
         }
 
@@ -109,11 +110,11 @@ public struct TimedProcessRunner: Sendable {
             waitForOutputCapture(outputReadGroup, pipe: outputPipe)
             return cancelledResult()
         }
-        defer { cancellation?.clearProcessIdentifier() }
 
         let finishedInTime = terminationGroup.wait(timeout: .now() + timeoutSeconds) == .success
         if !finishedInTime {
             let processStopped = terminate(process: process, terminationGroup: terminationGroup)
+            cancellation?.clearProcessIdentifier()
             waitForOutputCapture(outputReadGroup, pipe: outputPipe)
 
             if !processStopped {
@@ -131,6 +132,7 @@ public struct TimedProcessRunner: Sendable {
             )
         }
 
+        cancellation?.clearProcessIdentifier()
         waitForOutputCapture(outputReadGroup, pipe: outputPipe)
         let output = outputCaptureState.withLock { $0.output }
         if cancellation?.isCancelled == true {

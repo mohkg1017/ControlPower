@@ -51,6 +51,7 @@ struct HelperLaunchDiagnostics: Equatable, Sendable {
 
 private struct XPCConnectionCancellationState<T: Sendable> {
     var gate: XPCReplyGate<T>?
+    var isCancelled = false
 }
 
 // @unchecked Sendable: `weak var connection` is written only in init and read only from
@@ -73,8 +74,14 @@ private final class WeakConnectionInvalidator: @unchecked Sendable {
 private final class XPCConnectionCancellationBox<T: Sendable>: Sendable {
     private let state = Mutex(XPCConnectionCancellationState<T>(gate: nil))
 
-    func install(_ gate: XPCReplyGate<T>) {
-        state.withLock { $0.gate = gate }
+    func install(_ gate: XPCReplyGate<T>) -> Bool {
+        state.withLock { state in
+            guard !state.isCancelled else {
+                return false
+            }
+            state.gate = gate
+            return true
+        }
     }
 
     func clear() {
@@ -83,6 +90,7 @@ private final class XPCConnectionCancellationBox<T: Sendable>: Sendable {
 
     func cancel() {
         let gate = state.withLock { state -> XPCReplyGate<T>? in
+            state.isCancelled = true
             let gate = state.gate
             state.gate = nil
             return gate
@@ -198,7 +206,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
 
         Self.clearHelperTrustCache()
         do {
-            try Self.validateHelperTrust(preferBundleHelperPath: true)
+            try await Self.validateHelperTrustAsync(preferBundleHelperPath: true)
         } catch {
             throw NSError(
                 domain: "ControlPower.Helper",
@@ -518,6 +526,19 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         }
     }
 
+    nonisolated private static func validateHelperTrustAsync(
+        preferBundleHelperPath: Bool = false
+    ) async throws {
+        let task = Task.detached(priority: .utility) {
+            try validateHelperTrust(preferBundleHelperPath: preferBundleHelperPath)
+        }
+        try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
     nonisolated private static func validateHelperTrustUncached(
         preferBundleHelperPath: Bool = false
     ) -> String? {
@@ -808,10 +829,10 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         timeoutSeconds: TimeInterval = Self.xpcTimeoutSeconds,
         _ block: @escaping (PowerHelperXPCProtocol, String, @escaping @Sendable (T?, Error?) -> Void) -> Void
     ) async throws -> T {
-        try validateHelperTrust()
         let cancellationBox = XPCConnectionCancellationBox<T>()
         return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
+            try await validateHelperTrustAsync()
+            return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
                 let connection = NSXPCConnection(machServiceName: PowerHelperConstants.machServiceName, options: .privileged)
                 let invalidator = WeakConnectionInvalidator(connection: connection)
                 connection.remoteObjectInterface = NSXPCInterface(with: PowerHelperXPCProtocol.self)
@@ -819,7 +840,10 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
                     invalidator.invalidate()
                     cancellationBox.clear()
                 }
-                cancellationBox.install(gate)
+                guard cancellationBox.install(gate) else {
+                    gate.finish(.failure(CancellationError()))
+                    return
+                }
                 let finish = gate.finish
 
                 connection.interruptionHandler = {

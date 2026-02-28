@@ -94,6 +94,7 @@ final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate {
             return false
         }
         let connectionIdentifier = ObjectIdentifier(newConnection)
+        service.markConnectionActive(for: connectionIdentifier)
         newConnection.invalidationHandler = { [weak self] in
             self?.service.clearSessionToken(for: connectionIdentifier)
         }

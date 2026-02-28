@@ -23,6 +23,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
     private let operationQueue = DispatchQueue(label: "com.moe.controlpower.helper.pmset", qos: .utility)
     private let requestActivity = Mutex(RequestActivityState())
     private let sessionTokens = Mutex(OneTimeSessionTokenStore())
+    private let disconnectedConnectionIdentifiers = Mutex(Set<ObjectIdentifier>())
     private let idleTimer: DispatchSourceTimer
 
     override init() {
@@ -121,14 +122,23 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
             reply(false, "Helper is shutting down")
             return
         }
+        guard let context = currentConnectionContext() else {
+            endRequest()
+            reply(false, "Missing connection context")
+            return
+        }
         guard validateSessionToken(token, action: "setDisableSleep") else {
             endRequest()
             reply(false, "Unauthorized request token")
             return
         }
 
-        operationQueue.async { [self] in
+        operationQueue.async { [self, connectionIdentifier = context.identifier] in
             defer { endRequest() }
+            guard !isConnectionDisconnected(connectionIdentifier) else {
+                reply(false, "Client connection closed before request execution")
+                return
+            }
             let result = self.runPMSet(arguments: ["-a", "disablesleep", enabled ? "1" : "0"])
             reply(result.success, result.output)
         }
@@ -139,14 +149,23 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
             reply(false, "Helper is shutting down")
             return
         }
+        guard let context = currentConnectionContext() else {
+            endRequest()
+            reply(false, "Missing connection context")
+            return
+        }
         guard validateSessionToken(token, action: "restoreDefaults") else {
             endRequest()
             reply(false, "Unauthorized request token")
             return
         }
 
-        operationQueue.async { [self] in
+        operationQueue.async { [self, connectionIdentifier = context.identifier] in
             defer { endRequest() }
+            guard !isConnectionDisconnected(connectionIdentifier) else {
+                reply(false, "Client connection closed before request execution")
+                return
+            }
             let disableResult = self.runPMSet(arguments: ["-a", "disablesleep", "0"])
             guard disableResult.success else {
                 reply(false, disableResult.output)
@@ -160,6 +179,11 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
 
     nonisolated func clearSessionToken(for connectionIdentifier: ObjectIdentifier) {
         sessionTokens.withLock { $0.clearToken(for: connectionIdentifier) }
+        disconnectedConnectionIdentifiers.withLock { $0.insert(connectionIdentifier) }
+    }
+
+    nonisolated func markConnectionActive(for connectionIdentifier: ObjectIdentifier) {
+        disconnectedConnectionIdentifiers.withLock { $0.remove(connectionIdentifier) }
     }
 
     nonisolated private func beginRequest() -> Bool {
@@ -207,6 +231,10 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
 
         logger.error("rejected token for \(action, privacy: .public) from pid \(context.processIdentifier, privacy: .public)")
         return false
+    }
+
+    nonisolated private func isConnectionDisconnected(_ connectionIdentifier: ObjectIdentifier) -> Bool {
+        disconnectedConnectionIdentifiers.withLock { $0.contains(connectionIdentifier) }
     }
 
     nonisolated private func runPMSet(arguments: [String]) -> (success: Bool, output: String) {

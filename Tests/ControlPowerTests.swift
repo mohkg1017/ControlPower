@@ -556,6 +556,20 @@ nonisolated final class ControlPowerTests: XCTestCase {
         XCTAssertNil(viewModel.remainingSeconds)
     }
 
+    @MainActor
+    func testTimerZeroMinutesQueuesDisableAfterPendingEnableWhenStartingOff() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client)
+        viewModel.snapshot = PMSetSnapshot(disableSleep: false, lidWake: true, summary: "normal")
+
+        viewModel.startTimer(minutes: 0)
+        await client.waitForMutationCallCount(2)
+        await client.waitForIdleMutations()
+
+        XCTAssertEqual(client.setDisableSleepCallCount, 2)
+        XCTAssertEqual(client.lastDisableSleepValue, false)
+    }
+
     func testTimedProcessRunnerReturnsOutputForSuccess() {
         let runner = TimedProcessRunner(executableURL: URL(fileURLWithPath: "/bin/echo"), timeoutSeconds: 1)
         let result = runner.run(arguments: ["hello"])

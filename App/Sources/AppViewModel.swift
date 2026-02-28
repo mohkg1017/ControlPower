@@ -109,6 +109,7 @@ public final class AppViewModel {
     private var timerEndDate: Date?
 
     public var batteryLevel: Int = 100
+    private var isOnBatteryPower = true
     public var isLowBatteryProtectionEnabled: Bool = true {
         didSet {
             guard shouldPersistLowBatteryProtection else { return }
@@ -508,6 +509,7 @@ public final class AppViewModel {
         }
 
         var firstCapacity: Int?
+        var batteryPowerCapacity: Int?
         for source in sources {
             guard
                 let description = IOPSGetPowerSourceDescription(snapshot, source)?.takeUnretainedValue() as? [String: Any],
@@ -522,12 +524,19 @@ public final class AppViewModel {
 
             if let state = description[kIOPSPowerSourceStateKey as String] as? String,
                state == kIOPSBatteryPowerValue {
-                batteryLevel = capacity
-                checkBatterySafety()
-                return
+                batteryPowerCapacity = capacity
+                break
             }
         }
 
+        if let batteryPowerCapacity {
+            isOnBatteryPower = true
+            batteryLevel = batteryPowerCapacity
+            checkBatterySafety()
+            return
+        }
+
+        isOnBatteryPower = false
         if let firstCapacity {
             batteryLevel = firstCapacity
             checkBatterySafety()
@@ -535,7 +544,7 @@ public final class AppViewModel {
     }
 
     private func checkBatterySafety() {
-        guard isLowBatteryProtectionEnabled && batteryLevel <= 20 && snapshot.disableSleep == true else {
+        guard isLowBatteryProtectionEnabled && isOnBatteryPower && batteryLevel <= 20 && snapshot.disableSleep == true else {
             lowBatteryAutoDisableQueued = false
             return
         }
@@ -546,11 +555,10 @@ public final class AppViewModel {
     }
 
     private func finishTimerIfNeeded() {
-        let shouldDisableNoSleep = snapshot.disableSleep == true
+        timerTask = nil
         timerEndDate = nil
         remainingSeconds = nil
-        guard shouldDisableNoSleep else { return }
-        setDisableSleepEnabled(false)
+        setDisableSleep(false, forceWrite: true)
     }
 
     func handleSystemWake() async {
@@ -563,9 +571,9 @@ public final class AppViewModel {
         reapplyDesiredNoSleepIfNeeded()
     }
 
-    private func setDisableSleep(_ enabled: Bool) {
+    private func setDisableSleep(_ enabled: Bool, forceWrite: Bool = false) {
         updateDesiredNoSleep(enabled)
-        if let currentValue = snapshot.disableSleep, currentValue == enabled {
+        if !forceWrite, let currentValue = snapshot.disableSleep, currentValue == enabled {
             return
         }
         if !enabled {

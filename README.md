@@ -5,7 +5,7 @@ ControlPower is a native macOS menu bar utility to manage sleep-related `pmset` 
 ## Features
 
 - One-click toggle for `sudo pmset -a disablesleep 1/0`
-- One-click toggle for `sudo pmset -a lidwake 0/1`
+- Status view for `lidwake` from `pmset -g`
 - One-click restore defaults (`disablesleep 0`, `lidwake 1`)
 - Current status view using `pmset -g`
 
