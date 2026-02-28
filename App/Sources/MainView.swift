@@ -134,10 +134,18 @@ private struct OverviewTabView: View {
                 Text(viewModel.statusTitle)
                     .font(.title2.bold())
 
-                if let remainingTimeString = viewModel.remainingTimeString {
-                    Text("Expires in \(remainingTimeString)")
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(.orange)
+                if let timerEndDate = viewModel.activeTimerEndDate {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        if let remainingTimeString = AppViewModel.remainingTimeString(until: timerEndDate, now: context.date) {
+                            Text("Expires in \(remainingTimeString)")
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(.orange)
+                        } else {
+                            Text(viewModel.statusDescription)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 } else {
                     Text(viewModel.statusDescription)
                         .font(.subheadline)
@@ -156,7 +164,7 @@ private struct OverviewTabView: View {
                     Label("Stay Awake For...", systemImage: "timer")
                         .font(.subheadline.bold())
                     Spacer()
-                    if viewModel.remainingSeconds != nil {
+                    if viewModel.isTimerActive {
                         Button("Cancel Timer", role: .destructive) {
                             viewModel.cancelTimer()
                         }
@@ -168,7 +176,7 @@ private struct OverviewTabView: View {
 
                 HStack(spacing: 8) {
                     ForEach(timerDurations, id: \.self) { minutes in
-                        let isSelected = viewModel.selectedDurationMinutes == minutes && viewModel.remainingSeconds != nil
+                        let isSelected = viewModel.selectedDurationMinutes == minutes && viewModel.isTimerActive
                         Button {
                             viewModel.startTimer(minutes: minutes)
                         } label: {
@@ -311,18 +319,12 @@ private struct AdvancedStatusTabView: View {
     private var advancedTerminalBox: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Circle()
-                    .fill(.red.opacity(0.6))
-                    .frame(width: 10, height: 10)
+                Image(systemName: "terminal")
+                    .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                Circle()
-                    .fill(.orange.opacity(0.6))
-                    .frame(width: 10, height: 10)
-                    .accessibilityHidden(true)
-                Circle()
-                    .fill(.green.opacity(0.6))
-                    .frame(width: 10, height: 10)
-                    .accessibilityHidden(true)
+                Text("Power Settings")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Text("pmset -g")
                     .font(.system(.caption, design: .monospaced))
@@ -330,7 +332,7 @@ private struct AdvancedStatusTabView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color.primary.opacity(0.05))
+            .background(Color(nsColor: .controlBackgroundColor))
 
             Divider()
 
@@ -340,7 +342,10 @@ private struct AdvancedStatusTabView: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .glassEffect(in: RoundedRectangle(cornerRadius: 12))
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(nsColor: .textBackgroundColor))
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.primary.opacity(0.1), lineWidth: 1)

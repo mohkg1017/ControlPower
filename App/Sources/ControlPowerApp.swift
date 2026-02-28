@@ -38,7 +38,6 @@ struct ControlPowerApp: App {
                 .frame(minWidth: 700, minHeight: 460)
         }
         .defaultSize(width: 750, height: 500)
-        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandMenu("Power") {
                 Button("Refresh Status") {
@@ -51,6 +50,44 @@ struct ControlPowerApp: App {
                     viewModel.toggleDisableSleep()
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(viewModel.isBusy)
+
+                Divider()
+
+                Button("Sleep Display Now") {
+                    viewModel.sleepDisplay()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+                .disabled(viewModel.isBusy)
+
+                Menu("Keep Awake Timer") {
+                    Button("30 Minutes") {
+                        viewModel.startTimer(minutes: 30)
+                    }
+                    .disabled(viewModel.isBusy)
+
+                    Button("1 Hour") {
+                        viewModel.startTimer(minutes: 60)
+                    }
+                    .disabled(viewModel.isBusy)
+
+                    Button("2 Hours") {
+                        viewModel.startTimer(minutes: 120)
+                    }
+                    .disabled(viewModel.isBusy)
+
+                    Button("4 Hours") {
+                        viewModel.startTimer(minutes: 240)
+                    }
+                    .disabled(viewModel.isBusy)
+
+                    Divider()
+
+                    Button("Cancel Timer") {
+                        viewModel.cancelTimer()
+                    }
+                    .disabled(viewModel.isBusy || !viewModel.isTimerActive)
+                }
                 .disabled(viewModel.isBusy)
 
                 Divider()

@@ -112,12 +112,9 @@ if [[ "${SKIP_TESTS:-0}" != "1" ]]; then
       else
         second_run_exit_code="$?"
         if is_xctest_bundle_load_failure "$BUILD_DIR/test-attempt-2.log"; then
-          if [[ "${ALLOW_XCTEST_BUNDLE_FLAKE_CONTINUE:-0}" == "1" ]]; then
-            echo "warning: repeated xctest bundle-load failure detected. Continuing release without completed tests."
-            echo "warning: see $BUILD_DIR/test-attempt-1.log and $BUILD_DIR/test-attempt-2.log"
-          else
-            exit "$second_run_exit_code"
-          fi
+          echo "error: repeated xctest bundle-load failure detected. Aborting release."
+          echo "error: see $BUILD_DIR/test-attempt-1.log and $BUILD_DIR/test-attempt-2.log"
+          exit "$second_run_exit_code"
         else
           exit "$second_run_exit_code"
         fi

@@ -394,9 +394,7 @@ public final class AppViewModel {
 
         timerTask = Task { @MainActor [weak self] in
             while let self, let timerEndDate = self.timerEndDate {
-                let secondsRemaining = max(0, Int(ceil(timerEndDate.timeIntervalSinceNow)))
-                self.remainingSeconds = secondsRemaining > 0 ? secondsRemaining : nil
-                guard secondsRemaining > 0 else { break }
+                guard timerEndDate.timeIntervalSinceNow > 0 else { break }
 
                 let appIsActive = NSApp.isActive
                 let sleepInterval: Duration = appIsActive ? .seconds(1) : .seconds(5)
@@ -443,8 +441,22 @@ public final class AppViewModel {
         }
     }
 
+    public var isTimerActive: Bool {
+        timerEndDate != nil
+    }
+
+    public var activeTimerEndDate: Date? {
+        timerEndDate
+    }
+
     public var remainingTimeString: String? {
-        guard let totalSeconds = remainingSeconds else { return nil }
+        guard let timerEndDate else { return nil }
+        return Self.remainingTimeString(until: timerEndDate)
+    }
+
+    nonisolated public static func remainingTimeString(until endDate: Date, now: Date = Date()) -> String? {
+        let totalSeconds = max(0, Int(ceil(endDate.timeIntervalSince(now))))
+        guard totalSeconds > 0 else { return nil }
         let hours = totalSeconds / 3600
         let minutes = (totalSeconds % 3600) / 60
         let seconds = totalSeconds % 60

@@ -92,14 +92,23 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
             reply(false, -1, -1, "", "Helper is shutting down")
             return
         }
+        guard let context = currentConnectionContext() else {
+            endRequest()
+            reply(false, -1, -1, "", "Missing connection context")
+            return
+        }
         guard validateSessionToken(token, action: "fetchStatus") else {
             endRequest()
             reply(false, -1, -1, "", "Unauthorized request token")
             return
         }
 
-        operationQueue.async { [self] in
+        operationQueue.async { [self, connectionIdentifier = context.identifier] in
             defer { endRequest() }
+            guard !isConnectionDisconnected(connectionIdentifier) else {
+                reply(false, -1, -1, "", "Client connection closed before request execution")
+                return
+            }
             let result = self.runPMSet(arguments: ["-g"])
             guard result.success else {
                 reply(false, -1, -1, "", result.output)

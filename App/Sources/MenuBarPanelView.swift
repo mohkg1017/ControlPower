@@ -92,7 +92,6 @@ struct MenuBarPanelView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.thinMaterial)
     }
 
     // MARK: - Helpers
@@ -132,12 +131,12 @@ struct MenuBarPanelView: View {
         HStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(.purple.opacity(0.1))
+                    .fill(Color.accentColor.opacity(0.1))
                     .frame(width: 44, height: 44)
 
                 Image(systemName: "display")
                     .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(.purple)
+                    .foregroundStyle(Color.accentColor)
             }
             .accessibilityHidden(true)
 
@@ -158,7 +157,7 @@ struct MenuBarPanelView: View {
                     .font(.caption.bold())
             }
             .buttonStyle(.borderedProminent)
-            .tint(.purple)
+            .tint(.accentColor)
             .controlSize(.small)
             .disabled(viewModel.isBusy)
         }

@@ -116,17 +116,9 @@ public struct TimedProcessRunner: Sendable {
 
         let finishedInTime = terminationGroup.wait(timeout: .now() + timeoutSeconds) == .success
         if !finishedInTime {
-            let processStopped = terminate(process: process, terminationGroup: terminationGroup)
+            _ = terminate(process: process, terminationGroup: terminationGroup)
             cancellation?.clearProcessIdentifier()
             waitForOutputCapture(outputReadGroup, pipe: outputPipe)
-
-            if !processStopped {
-                return TimedProcessResult(
-                    success: false,
-                    output: "Command timed out after \(formatTimeout(timeoutSeconds)) seconds",
-                    timedOut: true
-                )
-            }
 
             return TimedProcessResult(
                 success: false,
