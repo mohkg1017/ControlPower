@@ -158,7 +158,6 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     public func isHelperEnabled() -> Bool {
-        let service = daemonService
         return helperStatus() == .enabled
     }
 
