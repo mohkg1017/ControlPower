@@ -97,7 +97,7 @@ public struct TimedProcessRunner: Sendable {
         let outputReadGroup = DispatchGroup()
         outputReadGroup.enter()
         DispatchQueue.global(qos: .utility).async {
-            let output = readOutput(from: outputPipe, maximumBytes: outputByteLimit)
+            let output = Self.readOutput(from: outputPipe, maximumBytes: outputByteLimit)
             outputCaptureState.withLock { $0.output = output }
             outputReadGroup.leave()
         }
@@ -162,11 +162,12 @@ public struct TimedProcessRunner: Sendable {
         _ = group.wait(timeout: .now() + 1)
     }
 
-    private func readOutput(from pipe: Pipe, maximumBytes: Int) -> String {
+    private static func readOutput(from pipe: Pipe, maximumBytes: Int) -> String {
         let handle = pipe.fileHandleForReading
         defer { handle.closeFile() }
 
         var outputData = Data()
+        outputData.reserveCapacity(min(maximumBytes, 4096))
         var truncated = false
 
         while true {

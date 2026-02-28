@@ -9,6 +9,7 @@ final class MutationScheduler {
 
     init(maxPendingMutations: Int) {
         self.maxPendingMutations = maxPendingMutations
+        pendingMutations.reserveCapacity(8)
     }
 
     func enqueue(
@@ -29,6 +30,7 @@ final class MutationScheduler {
             guard let self else { return }
             while self.pendingMutationIndex < self.pendingMutations.count {
                 let next = self.pendingMutations[self.pendingMutationIndex]
+                self.pendingMutations[self.pendingMutationIndex] = {}
                 self.pendingMutationIndex += 1
                 await next()
             }

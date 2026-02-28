@@ -29,15 +29,13 @@ struct ControlPowerApp: App {
     init() {
         let model = AppViewModel()
         _viewModel = State(initialValue: model)
+        model.startup()
     }
 
     var body: some Scene {
         WindowGroup("ControlPower", id: "main") {
             MainView(viewModel: viewModel)
                 .frame(minWidth: 700, minHeight: 460)
-                .task {
-                    viewModel.startup()
-                }
         }
         .defaultSize(width: 750, height: 500)
         .windowStyle(.hiddenTitleBar)
@@ -82,14 +80,13 @@ struct ControlPowerApp: App {
             MenuBarPanelView(viewModel: viewModel) {
                 NSApp.terminate(nil)
             }
-            .task {
-                viewModel.startup()
-            }
         }
         .menuBarExtraStyle(.window)
 
         Settings {
             ControlPowerSettingsView(viewModel: viewModel)
+                .padding(16)
+                .frame(minWidth: 460, minHeight: 320)
         }
     }
 }

@@ -90,6 +90,11 @@ public final class AppViewModel {
     nonisolated private static let desiredNoSleepKey = "desiredNoSleep"
     nonisolated private static let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     nonisolated private static let maxPendingMutations = 64
+    nonisolated public static let appVersion: String = {
+        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let b = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        return "Version \(v) (Build \(b))"
+    }()
 
     public var snapshot = PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "No status yet")
     public var statusSource: PowerStatusSource = .localFallback
@@ -272,7 +277,7 @@ public final class AppViewModel {
         do {
             let status = try await client.fetchStatus()
             guard !Task.isCancelled else { return }
-            snapshot = status.snapshot
+            if snapshot != status.snapshot { snapshot = status.snapshot }
             statusSource = status.source
             lastError = nil
             helperNeedsRepair = status.source == .localFallback && isHelperEnabled
@@ -380,7 +385,7 @@ public final class AppViewModel {
 
                 let appIsActive = NSApp.isActive
                 let sleepInterval: Duration = appIsActive ? .seconds(1) : .seconds(5)
-                let sleepTolerance: Duration = appIsActive ? .milliseconds(250) : .seconds(1)
+                let sleepTolerance: Duration = appIsActive ? .milliseconds(500) : .seconds(1)
                 do {
                     try await Task.sleep(for: sleepInterval, tolerance: sleepTolerance)
                 } catch {
@@ -403,12 +408,6 @@ public final class AppViewModel {
         enqueueOperation("Sleep display") { viewModel in
             try await viewModel.client.displaySleepNow()
         }
-    }
-
-    public func copyStatusToClipboard() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(snapshot.summary, forType: .string)
     }
 
     public func restoreDefaults() {
@@ -456,9 +455,8 @@ public final class AppViewModel {
         guard let source = IOPSNotificationCreateRunLoopSource({ context in
             guard let context else { return }
             let monitorContext = Unmanaged<BatteryMonitorContext>.fromOpaque(context).takeUnretainedValue()
-            guard let viewModel = monitorContext.viewModel else { return }
-            Task { @MainActor in
-                viewModel.updateBatteryLevelFromSystem()
+            Task { @MainActor [weak viewModel = monitorContext.viewModel] in
+                viewModel?.updateBatteryLevelFromSystem()
             }
         }, contextPointer)?.takeRetainedValue() else {
             Unmanaged<BatteryMonitorContext>.fromOpaque(contextPointer).release()
@@ -467,12 +465,12 @@ public final class AppViewModel {
 
         batteryMonitorContextPointer = contextPointer
         batterySourceRunLoopSource = source
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
     }
 
     private func tearDownBatteryMonitoring() {
         if let source = batterySourceRunLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .defaultMode)
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
             batterySourceRunLoopSource = nil
         }
         if let contextPointer = batteryMonitorContextPointer {
@@ -486,11 +484,11 @@ public final class AppViewModel {
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
-            queue: nil
+            queue: .main
         ) { [weak self] _ in
+            guard let self else { return }
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                await self.handleSystemWake()
+                await self?.handleSystemWake()
             }
         } as AnyObject
     }
@@ -594,9 +592,15 @@ public final class AppViewModel {
     }
 
     private func updateDesiredNoSleep(_ desired: Bool) {
+        guard desiredNoSleep != desired else { return }
         desiredNoSleep = desired
         guard shouldPersistDesiredNoSleep else { return }
         UserDefaults.standard.set(desired, forKey: Self.desiredNoSleepKey)
+    }
+
+    public func copyRawOutputToPasteboard() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(snapshot.summary, forType: .string)
     }
 
     private func helperRepairFailureMessage(for error: Error) -> String {
@@ -614,15 +618,20 @@ public final class AppViewModel {
     private func refreshSnapshotFromClient() async throws {
         let status = try await client.fetchStatus()
         guard !Task.isCancelled else { return }
-        snapshot = status.snapshot
+        if snapshot != status.snapshot { snapshot = status.snapshot }
         statusSource = status.source
     }
 
     private func enqueueOperation(_ label: String, operation: @escaping (AppViewModel) async throws -> Void) {
         enqueueMutation { [weak self] in
             guard let self else { return }
-            _ = await self.perform(label) {
+            self.isBusy = true
+            defer { self.isBusy = false }
+            do {
                 try await operation(self)
+                self.lastError = nil
+            } catch {
+                self.lastError = "\(label) failed: \(error.controlPowerSanitizedDescription)"
             }
         }
     }
@@ -630,20 +639,6 @@ public final class AppViewModel {
     private func enqueueMutation(_ mutation: @escaping () async -> Void) {
         mutationScheduler.enqueue(mutation) { [weak self] in
             self?.lastError = "Too many pending actions. Please wait for current changes to finish."
-        }
-    }
-
-    @discardableResult
-    private func perform(_ label: String, operation: () async throws -> Void) async -> Bool {
-        isBusy = true
-        defer { isBusy = false }
-        do {
-            try await operation()
-            lastError = nil
-            return true
-        } catch {
-            lastError = "\(label) failed: \(error.controlPowerSanitizedDescription)"
-            return false
         }
     }
 }

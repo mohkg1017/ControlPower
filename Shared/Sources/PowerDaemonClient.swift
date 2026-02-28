@@ -53,6 +53,11 @@ private struct XPCConnectionCancellationState<T: Sendable> {
     var gate: XPCReplyGate<T>?
 }
 
+// @unchecked Sendable: `weak var connection` is written only in init and read only from
+// `invalidate()`, which is called at most once via XPCReplyGate's Mutex-guarded single-fire
+// guarantee. The weak reference is intentional — it breaks the retain cycle between the
+// connection's invalidationHandler (which captures the gate) and the gate's onFinish (which
+// would otherwise capture the connection strongly).
 private final class WeakConnectionInvalidator: @unchecked Sendable {
     private weak var connection: NSXPCConnection?
 
@@ -365,11 +370,12 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             )
         }
 
+        let now = Date()
         if let cachedSnapshot = localSnapshotCache.withLock({ cache -> PMSetSnapshot? in
             guard
                 let snapshot = cache.snapshot,
                 let fetchedAt = cache.fetchedAt,
-                Date().timeIntervalSince(fetchedAt) <= localSnapshotCacheTTLSeconds
+                now.timeIntervalSince(fetchedAt) <= localSnapshotCacheTTLSeconds
             else {
                 return nil
             }
@@ -476,11 +482,12 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     nonisolated private static func validateHelperTrust(preferBundleHelperPath: Bool = false) throws {
+        let now = Date()
         let cachedState = helperTrustCache.withLock { state -> (isFresh: Bool, validationError: String?) in
             guard let checkedAt = state.checkedAt else {
                 return (false, nil)
             }
-            guard Date().timeIntervalSince(checkedAt) <= helperTrustCacheTTLSeconds else {
+            guard now.timeIntervalSince(checkedAt) <= helperTrustCacheTTLSeconds else {
                 return (false, nil)
             }
             return (true, state.validationError)
@@ -774,7 +781,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     nonisolated private static func simpleCall(
-        _ action: @escaping (PowerHelperXPCProtocol, String, @escaping (Bool, String) -> Void) -> Void
+        _ action: @escaping (PowerHelperXPCProtocol, String, @escaping @Sendable (Bool, String) -> Void) -> Void
     ) async throws {
         try await withConnection { proxy, token, done in
             action(proxy, token) { success, message in
@@ -797,7 +804,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
 
     nonisolated private static func withConnection<T: Sendable>(
         timeoutSeconds: TimeInterval = Self.xpcTimeoutSeconds,
-        _ block: @escaping (PowerHelperXPCProtocol, String, @escaping (T?, Error?) -> Void) -> Void
+        _ block: @escaping (PowerHelperXPCProtocol, String, @escaping @Sendable (T?, Error?) -> Void) -> Void
     ) async throws -> T {
         try validateHelperTrust()
         let cancellationBox = XPCConnectionCancellationBox<T>()
@@ -828,7 +835,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
                     )))
                 }
 
-                let timeoutTask = Task {
+                let timeoutTask = Task(priority: .userInitiated) {
                     try? await Task.sleep(for: .seconds(timeoutSeconds))
                     guard !Task.isCancelled else { return }
                     gate.finish(.failure(NSError(

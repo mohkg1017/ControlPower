@@ -1,5 +1,4 @@
 import ControlPowerCore
-import ServiceManagement
 import SwiftUI
 
 struct MainView: View {
@@ -62,7 +61,7 @@ struct MainView: View {
                 Text("ControlPower")
                     .font(.largeTitle.bold())
                 
-                Text(appVersionText)
+                Text(AppViewModel.appVersion)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -111,17 +110,21 @@ struct MainView: View {
                 .padding(.horizontal, 24)
 
                 if !viewModel.isHelperEnabled {
-                    helperApprovalBanner
+                    HelperApprovalBannerView(compact: false)
                         .padding(.horizontal, 24)
                 }
 
                 if viewModel.helperNeedsRepair {
-                    helperRepairBanner
-                        .padding(.horizontal, 24)
+                    HelperRepairBannerView(isBusy: viewModel.isBusy, compact: false) {
+                        Task { [weak viewModel] in
+                            await viewModel?.repairDaemon()
+                        }
+                    }
+                    .padding(.horizontal, 24)
                 }
 
                 if let error = viewModel.lastError {
-                    errorBanner(error)
+                    ErrorBannerView(message: error, compact: false)
                         .padding(.horizontal, 24)
                 }
             }
@@ -141,36 +144,9 @@ struct MainView: View {
     }
 
     private var settingsView: some View {
-        Form {
-            Section {
-                Toggle("Low Battery Protection", isOn: $viewModel.isLowBatteryProtectionEnabled)
-                Text("Automatically turn off 'No Sleep' when battery is 20% or lower.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Power Safety")
-            }
-
-            Section {
-                Toggle("Launch Background Helper at Login", isOn: helperEnabledBinding)
-            } header: {
-                Text("Automation")
-            } footer: {
-                Text("The background helper is required for 'No Sleep' to function across reboots.")
-            }
-            
-            Section {
-                Button("Restore System Defaults") {
-                    viewModel.restoreDefaults()
-                }
-                .disabled(viewModel.isBusy)
-            } header: {
-                Text("Maintenance")
-            }
-        }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .navigationTitle("Settings")
+        ControlPowerSettingsView(viewModel: viewModel)
+            .scrollContentBackground(.hidden)
+            .navigationTitle("Settings")
     }
 
     private var statusHeader: some View {
@@ -341,7 +317,7 @@ struct MainView: View {
             Spacer()
 
             Button {
-                viewModel.copyStatusToClipboard()
+                viewModel.copyRawOutputToPasteboard()
             } label: {
                 Label("Copy Output", systemImage: "doc.on.doc")
             }
@@ -354,34 +330,46 @@ struct MainView: View {
 
     private var advancedTerminalBox: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Circle().fill(.red.opacity(0.6)).frame(width: 10, height: 10)
-                Circle().fill(.orange.opacity(0.6)).frame(width: 10, height: 10)
-                Circle().fill(.green.opacity(0.6)).frame(width: 10, height: 10)
-                Spacer()
-                Text("pmset -g")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.primary.opacity(0.05))
+            advancedTerminalHeaderBar
 
             Divider()
 
-            Text(viewModel.snapshot.summary.isEmpty ? "No pmset output yet" : viewModel.snapshot.summary)
-                .font(.system(.body, design: .monospaced))
-                .textSelection(.enabled)
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            advancedTerminalOutput
         }
-        .background(.ultraThinMaterial)
+        .background(Color(nsColor: .windowBackgroundColor).opacity(0.92))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.primary.opacity(0.1), lineWidth: 1)
         )
         .padding(.horizontal, 24)
+    }
+
+    private var advancedTerminalHeaderBar: some View {
+        HStack(spacing: 6) {
+            Circle().fill(.red.opacity(0.6)).frame(width: 10, height: 10)
+            Circle().fill(.orange.opacity(0.6)).frame(width: 10, height: 10)
+            Circle().fill(.green.opacity(0.6)).frame(width: 10, height: 10)
+            Spacer()
+            Text("pmset -g")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.primary.opacity(0.05))
+    }
+
+    private var advancedTerminalOutput: some View {
+        Text(advancedTerminalSummaryText)
+            .font(.system(.body, design: .monospaced))
+            .textSelection(.enabled)
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var advancedTerminalSummaryText: String {
+        viewModel.snapshot.summary.isEmpty ? "No pmset output yet" : viewModel.snapshot.summary
     }
 
     private func parameterDesc(key: String, desc: String) -> some View {
@@ -407,75 +395,7 @@ struct MainView: View {
         }
     }
 
-    private var helperApprovalBanner: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.shield.fill")
-                .foregroundStyle(.yellow)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Helper Not Approved")
-                    .font(.caption.bold())
-                Text("Approve in System Settings to enable sleep control.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button("Open Settings") {
-                SMAppService.openSystemSettingsLoginItems()
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-        }
-        .padding(12)
-        .background(Color.yellow.opacity(0.1))
-        .cornerRadius(8)
-    }
-
-    private var helperRepairBanner: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "wrench.trianglebadge.exclamationmark")
-                .foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Helper daemon needs repair")
-                    .font(.caption.bold())
-                Text("The background helper failed to start.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button("Repair") {
-                Task { await viewModel.repairDaemon() }
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.orange)
-            .controlSize(.small)
-            .disabled(viewModel.isBusy)
-        }
-        .padding(12)
-        .background(Color.orange.opacity(0.1))
-        .cornerRadius(8)
-    }
-
-    private func errorBanner(_ message: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-            Text(message)
-                .font(.caption)
-            Spacer()
-        }
-        .padding(12)
-        .background(Color.red.opacity(0.1))
-        .cornerRadius(8)
-    }
-
     // MARK: - Helpers
-
-    private var helperEnabledBinding: Binding<Bool> {
-        Binding(
-            get: { viewModel.isHelperEnabled },
-            set: { viewModel.setHelperEnabled($0) }
-        )
-    }
 
     private var selectedTab: Tab {
         Tab(rawValue: selectedTabStorage) ?? .overview
@@ -486,12 +406,6 @@ struct MainView: View {
             get: { selectedTab },
             set: { selectedTabStorage = ($0 ?? .overview).rawValue }
         )
-    }
-
-    private var appVersionText: String {
-        let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        let buildNumber = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-        return "Version \(shortVersion) (Build \(buildNumber))"
     }
 
 }
@@ -510,16 +424,22 @@ private struct AnimatedTahoeBackground: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.controlActiveState) private var controlActiveState
+    @State private var isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
 
     var body: some View {
-        if reduceMotion || ProcessInfo.processInfo.isLowPowerModeEnabled || scenePhase != .active || controlActiveState != .key {
-            StaticMeshLayer()
+        Group {
+            if reduceMotion || isLowPowerModeEnabled || scenePhase != .active || controlActiveState != .key {
+                StaticMeshLayer()
+                    .allowsHitTesting(false)
+            } else {
+                TimelineView(.periodic(from: .now, by: 3.0)) { context in
+                    AnimatedMeshLayer(phase: context.date.timeIntervalSinceReferenceDate)
+                }
                 .allowsHitTesting(false)
-        } else {
-            TimelineView(.periodic(from: .now, by: 3.0)) { context in
-                AnimatedMeshLayer(phase: context.date.timeIntervalSinceReferenceDate)
             }
-            .allowsHitTesting(false)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
+            isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
         }
     }
 }
@@ -541,7 +461,8 @@ private struct AnimatedMeshLayer: View {
             .init(0, 1), .init(0.5, 1), .init(1, 1)
         ], colors: Self.colors)
         .ignoresSafeArea()
-        .blur(radius: 16)
+        .blur(radius: 12)
+        .drawingGroup()
     }
 }
 
@@ -560,6 +481,7 @@ private struct StaticMeshLayer: View {
     var body: some View {
         MeshGradient(width: 3, height: 3, points: Self.points, colors: Self.colors)
         .ignoresSafeArea()
-        .blur(radius: 14)
+        .blur(radius: 12)
+        .drawingGroup()
     }
 }

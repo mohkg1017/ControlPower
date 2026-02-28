@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 import Synchronization
 
-final class HelperService: NSObject, PowerHelperXPCProtocol {
+final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable {
     private struct SessionTokenState {
         var tokens: [ObjectIdentifier: String] = [:]
     }
@@ -18,18 +18,18 @@ final class HelperService: NSObject, PowerHelperXPCProtocol {
     private let pmsetTimeoutSeconds: TimeInterval = 8
     private let idleTimeoutSeconds: TimeInterval = 120
     private let pmsetValidationError: String? = SystemExecutableValidator.validateExecutable(at: URL(fileURLWithPath: "/usr/bin/pmset"))
-    private let operationQueue = DispatchQueue(label: "com.moe.controlpower.helper.pmset")
+    private let operationQueue = DispatchQueue(label: "com.moe.controlpower.helper.pmset", qos: .utility)
     private let lastActivity = Mutex(Date())
     private let inFlightRequestCount = Mutex(0)
     private let sessionTokens = Mutex(SessionTokenState())
     private let idleTimer: DispatchSourceTimer
 
     override init() {
-        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "com.moe.controlpower.helper.idle-watchdog"))
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "com.moe.controlpower.helper.idle-watchdog", qos: .background))
         self.idleTimer = timer
         super.init()
 
-        timer.schedule(deadline: .now() + .seconds(30), repeating: .seconds(30))
+        timer.schedule(deadline: .now() + .seconds(Int(idleTimeoutSeconds)), repeating: .seconds(30), leeway: .seconds(10))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             let idleDuration = self.lastActivity.withLock { Date().timeIntervalSince($0) }
@@ -45,7 +45,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol {
         idleTimer.cancel()
     }
 
-    func issueSessionToken(_ reply: @escaping (String) -> Void) {
+    nonisolated func issueSessionToken(_ reply: @escaping (String) -> Void) {
         beginRequest()
         defer { endRequest() }
         guard let context = currentConnectionContext() else {
@@ -59,7 +59,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol {
         reply(token)
     }
 
-    func ping(_ token: String, _ reply: @escaping (String) -> Void) {
+    nonisolated func ping(_ token: String, _ reply: @escaping (String) -> Void) {
         beginRequest()
         defer { endRequest() }
         guard validateSessionToken(token, action: "ping") else {
@@ -69,15 +69,16 @@ final class HelperService: NSObject, PowerHelperXPCProtocol {
         reply("pong")
     }
 
-    func fetchStatus(_ token: String, _ reply: @escaping (Bool, Int, Int, String, String) -> Void) {
+    nonisolated func fetchStatus(_ token: String, _ reply: @escaping @Sendable (Bool, Int, Int, String, String) -> Void) {
         beginRequest()
-        defer { endRequest() }
         guard validateSessionToken(token, action: "fetchStatus") else {
+            endRequest()
             reply(false, -1, -1, "", "Unauthorized request token")
             return
         }
 
-        operationQueue.sync {
+        operationQueue.async { [self] in
+            defer { endRequest() }
             let result = self.runPMSet(arguments: ["-g"])
             guard result.success else {
                 reply(false, -1, -1, "", result.output)
@@ -95,29 +96,31 @@ final class HelperService: NSObject, PowerHelperXPCProtocol {
         }
     }
 
-    func setDisableSleep(_ enabled: Bool, token: String, _ reply: @escaping (Bool, String) -> Void) {
+    nonisolated func setDisableSleep(_ enabled: Bool, token: String, _ reply: @escaping @Sendable (Bool, String) -> Void) {
         beginRequest()
-        defer { endRequest() }
         guard validateSessionToken(token, action: "setDisableSleep") else {
+            endRequest()
             reply(false, "Unauthorized request token")
             return
         }
 
-        operationQueue.sync {
+        operationQueue.async { [self] in
+            defer { endRequest() }
             let result = self.runPMSet(arguments: ["-a", "disablesleep", enabled ? "1" : "0"])
             reply(result.success, result.output)
         }
     }
 
-    func restoreDefaults(_ token: String, _ reply: @escaping (Bool, String) -> Void) {
+    nonisolated func restoreDefaults(_ token: String, _ reply: @escaping @Sendable (Bool, String) -> Void) {
         beginRequest()
-        defer { endRequest() }
         guard validateSessionToken(token, action: "restoreDefaults") else {
+            endRequest()
             reply(false, "Unauthorized request token")
             return
         }
 
-        operationQueue.sync {
+        operationQueue.async { [self] in
+            defer { endRequest() }
             let disableResult = self.runPMSet(arguments: ["-a", "disablesleep", "0"])
             guard disableResult.success else {
                 reply(false, disableResult.output)
@@ -129,16 +132,16 @@ final class HelperService: NSObject, PowerHelperXPCProtocol {
         }
     }
 
-    func clearSessionToken(for connectionIdentifier: ObjectIdentifier) {
+    nonisolated func clearSessionToken(for connectionIdentifier: ObjectIdentifier) {
         sessionTokens.withLock { $0.tokens[connectionIdentifier] = nil }
     }
 
-    private func beginRequest() {
+    nonisolated private func beginRequest() {
         inFlightRequestCount.withLock { $0 += 1 }
         markActivity()
     }
 
-    private func endRequest() {
+    nonisolated private func endRequest() {
         inFlightRequestCount.withLock { count in
             if count > 0 {
                 count -= 1
@@ -146,11 +149,11 @@ final class HelperService: NSObject, PowerHelperXPCProtocol {
         }
     }
 
-    private func markActivity() {
+    nonisolated private func markActivity() {
         lastActivity.withLock { $0 = Date() }
     }
 
-    private func currentConnectionContext() -> ConnectionContext? {
+    nonisolated private func currentConnectionContext() -> ConnectionContext? {
         guard let connection = NSXPCConnection.current() else {
             logger.error("missing current NSXPCConnection context")
             return nil
@@ -162,7 +165,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol {
         )
     }
 
-    private func validateSessionToken(_ token: String, action: StaticString) -> Bool {
+    nonisolated private func validateSessionToken(_ token: String, action: StaticString) -> Bool {
         guard let context = currentConnectionContext() else {
             return false
         }
@@ -184,7 +187,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol {
         return false
     }
 
-    private func runPMSet(arguments: [String]) -> (success: Bool, output: String) {
+    nonisolated private func runPMSet(arguments: [String]) -> (success: Bool, output: String) {
         if let pmsetValidationError {
             return (false, pmsetValidationError)
         }

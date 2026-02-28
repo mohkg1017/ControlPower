@@ -10,6 +10,7 @@
 		15223D24668B13FE8B10198C /* ControlPowerSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B75491BA4E87B9ABDEB4153 /* ControlPowerSettingsView.swift */; };
 		158FF234F28C2193BFF51408 /* ErrorSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DBDA897E9CEE1875012C32 /* ErrorSanitizer.swift */; };
 		17431CABD782A0CF04CFF33B /* ControlPowerCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = C3F9E37062B3EB7E2781BB7D /* ControlPowerCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		1895F0FFFA85AA6085FF9E0F /* PowerBannerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 461EBB24A3D61D52DFC06D1D /* PowerBannerViews.swift */; };
 		18AEA442F043DC801313EE5C /* TimedProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA70449A591DF349FFFB343E /* TimedProcessRunner.swift */; };
 		1A59E944B8274794A041394F /* MenuBarPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F534132BEC0146A3D375F2B /* MenuBarPanelView.swift */; };
 		21F8D96A19B4F5F817DCE82A /* PowerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89FEB7205A7BE8083580838F /* PowerModels.swift */; };
@@ -105,6 +106,7 @@
 		1B5716BBCDF23760B8B7A1A6 /* ControlPowerHelper */ = {isa = PBXFileReference; includeInIndex = 0; path = ControlPowerHelper; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B96B69A6A8ED82D60AA1F18 /* ControlPower.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ControlPower.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		40866E50BC166BB7E65974EA /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		461EBB24A3D61D52DFC06D1D /* PowerBannerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerBannerViews.swift; sourceTree = "<group>"; };
 		473E1A943CA64B7845D6B8CB /* HelperService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperService.swift; sourceTree = "<group>"; };
 		4978AFBAC23984886014DA6B /* ControlPowerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ControlPowerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		50DBDA897E9CEE1875012C32 /* ErrorSanitizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorSanitizer.swift; sourceTree = "<group>"; };
@@ -178,6 +180,7 @@
 				40866E50BC166BB7E65974EA /* MainView.swift */,
 				7F534132BEC0146A3D375F2B /* MenuBarPanelView.swift */,
 				199A04101523509B5F605332 /* MutationScheduler.swift */,
+				461EBB24A3D61D52DFC06D1D /* PowerBannerViews.swift */,
 			);
 			name = AppSources;
 			path = App/Sources;
@@ -435,6 +438,7 @@
 				A248852818FC187C9336C356 /* MainView.swift in Sources */,
 				1A59E944B8274794A041394F /* MenuBarPanelView.swift in Sources */,
 				424B16826D8330C607025F15 /* MutationScheduler.swift in Sources */,
+				1895F0FFFA85AA6085FF9E0F /* PowerBannerViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

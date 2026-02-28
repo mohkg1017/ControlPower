@@ -1,5 +1,4 @@
 import ControlPowerCore
-import ServiceManagement
 import SwiftUI
 
 struct MenuBarPanelView: View {
@@ -40,7 +39,7 @@ struct MenuBarPanelView: View {
             }
             .buttonStyle(.plain)
             .disabled(viewModel.isBusy)
-            .symbolEffect(.rotate, value: viewModel.isBusy)
+            .symbolEffect(.bounce, value: viewModel.isBusy)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -52,15 +51,19 @@ struct MenuBarPanelView: View {
             sleepDisplayRow
 
             if !viewModel.isHelperEnabled {
-                helperApprovalBanner
+                HelperApprovalBannerView(compact: true)
             }
 
             if viewModel.helperNeedsRepair {
-                helperRepairBanner
+                HelperRepairBannerView(isBusy: viewModel.isBusy, compact: true) {
+                    Task { [weak viewModel] in
+                        await viewModel?.repairDaemon()
+                    }
+                }
             }
 
             if let error = viewModel.lastError {
-                errorBanner(error)
+                ErrorBannerView(message: error, compact: true)
             }
         }
     }
@@ -142,72 +145,17 @@ struct MenuBarPanelView: View {
 
             Spacer()
 
-            Toggle("Sleep Display", isOn: sleepDisplayBinding)
-                .labelsHidden()
-                .accessibilityLabel("Sleep Display")
-                .toggleStyle(.switch)
-                .disabled(viewModel.isBusy)
-        }
-    }
-
-    private var helperApprovalBanner: some View {
-        HStack {
-            Image(systemName: "exclamationmark.shield.fill")
-                .foregroundStyle(.yellow)
-            Text("Helper not approved")
-                .font(.caption2)
-            Spacer()
-            Button("Approve") {
-                SMAppService.openSystemSettingsLoginItems()
+            Button {
+                viewModel.sleepDisplay()
+            } label: {
+                Text("Sleep Now")
+                    .font(.caption.bold())
             }
-            .controlSize(.small)
             .buttonStyle(.borderedProminent)
-            .tint(.yellow)
-        }
-        .padding(8)
-        .background(Color.yellow.opacity(0.05))
-        .cornerRadius(6)
-    }
-
-    private var helperRepairBanner: some View {
-        HStack {
-            Image(systemName: "wrench.trianglebadge.exclamationmark")
-                .foregroundStyle(.orange)
-            Text("Helper needs repair")
-                .font(.caption2)
-            Spacer()
-            Button("Repair") {
-                Task { await viewModel.repairDaemon() }
-            }
+            .tint(.purple)
             .controlSize(.small)
-            .buttonStyle(.borderedProminent)
-            .tint(.orange)
             .disabled(viewModel.isBusy)
         }
-        .padding(8)
-        .background(Color.orange.opacity(0.05))
-        .cornerRadius(6)
-    }
-
-    private func errorBanner(_ error: String) -> some View {
-        HStack {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-            Text(error)
-                .font(.caption2)
-                .lineLimit(2)
-            Spacer()
-        }
-        .padding(8)
-        .background(Color.red.opacity(0.05))
-        .cornerRadius(6)
-    }
-
-    private var sleepDisplayBinding: Binding<Bool> {
-        Binding(
-            get: { false },
-            set: { if $0 { viewModel.sleepDisplay() } }
-        )
     }
 
     private var disableSleepBinding: Binding<Bool> {

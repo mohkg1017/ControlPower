@@ -33,8 +33,6 @@ struct ControlPowerSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding(16)
-        .frame(minWidth: 460, minHeight: 320)
     }
 
     private var helperEnabledBinding: Binding<Bool> {
