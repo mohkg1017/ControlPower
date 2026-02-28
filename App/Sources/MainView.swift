@@ -128,6 +128,7 @@ private struct OverviewTabView: View {
                     .font(.system(size: 40, weight: .bold))
                     .foregroundStyle(viewModel.statusTint.color)
                     .symbolEffect(.bounce, value: viewModel.powerMode)
+                    .accessibilityHidden(true)
             }
 
             VStack(spacing: 4) {
@@ -456,9 +457,7 @@ private struct AnimatedTahoeBackground: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
-            Task { @MainActor in
-                isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
-            }
+            isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
         }
     }
 }

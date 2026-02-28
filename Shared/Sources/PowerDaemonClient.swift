@@ -114,6 +114,8 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     nonisolated private static let localSnapshotCache = Mutex(LocalPMSetSnapshotCacheState(snapshot: nil, fetchedAt: nil))
     nonisolated private static let helperTrustCache = Mutex(HelperTrustCacheState(checkedAt: nil, validationError: nil))
     nonisolated private static let currentTeamIdentifier = ProcessSigningIdentity.currentTeamIdentifier()
+    nonisolated private static let helperConnectionRequirement = CodeSigningRequirementBuilder
+        .helperExecutableRequirementString(teamIdentifier: currentTeamIdentifier)
 
     public init() {}
 
@@ -472,10 +474,6 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     nonisolated static func isIgnorableBootoutFailureDescription(_ description: String) -> Bool {
-        let normalizedDescription = description.lowercased()
-        if normalizedDescription.contains("operation not permitted") || normalizedDescription.contains("not permitted") {
-            return true
-        }
         return isIgnorableUnregisterFailureDescription(description)
     }
 
@@ -834,6 +832,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             try await validateHelperTrustAsync()
             return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
                 let connection = NSXPCConnection(machServiceName: PowerHelperConstants.machServiceName, options: .privileged)
+                connection.setCodeSigningRequirement(helperConnectionRequirement)
                 let invalidator = WeakConnectionInvalidator(connection: connection)
                 connection.remoteObjectInterface = NSXPCInterface(with: PowerHelperXPCProtocol.self)
                 let gate = XPCReplyGate(continuation: continuation) {

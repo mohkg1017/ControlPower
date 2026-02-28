@@ -58,7 +58,7 @@ nonisolated final class ControlPowerTests: XCTestCase {
     }
 
     @MainActor
-    func testMutationQueueBackpressurePreventsUnboundedGrowth() async {
+    func testMutationQueueCoalescesRapidDisableSleepMutations() async {
         let client = FakePowerDaemonClient()
         client.holdFetchStatus = true
         let viewModel = AppViewModel(client: client)
@@ -70,7 +70,7 @@ nonisolated final class ControlPowerTests: XCTestCase {
             viewModel.toggleDisableSleep()
         }
 
-        XCTAssertEqual(
+        XCTAssertNotEqual(
             viewModel.lastError,
             "Too many pending actions. Please wait for current changes to finish."
         )
@@ -79,7 +79,7 @@ nonisolated final class ControlPowerTests: XCTestCase {
         client.resumeHeldFetchStatus()
         await client.waitForIdleMutations()
 
-        XCTAssertLessThanOrEqual(client.setDisableSleepCallCount, 65)
+        XCTAssertLessThanOrEqual(client.setDisableSleepCallCount, 2)
     }
 
     @MainActor
@@ -564,10 +564,11 @@ nonisolated final class ControlPowerTests: XCTestCase {
         viewModel.snapshot = PMSetSnapshot(disableSleep: false, lidWake: true, summary: "normal")
 
         viewModel.startTimer(minutes: 0)
-        await client.waitForMutationCallCount(2)
+        await client.waitForMutationCallCount(1)
+        await waitForCondition { client.lastDisableSleepValue == false }
         await client.waitForIdleMutations()
 
-        XCTAssertEqual(client.setDisableSleepCallCount, 2)
+        XCTAssertGreaterThanOrEqual(client.setDisableSleepCallCount, 1)
         XCTAssertEqual(client.lastDisableSleepValue, false)
     }
 
@@ -849,13 +850,67 @@ nonisolated final class ControlPowerTests: XCTestCase {
         XCTAssertTrue(PowerDaemonClient.isIgnorableBootoutFailure(result))
     }
 
-    func testIsIgnorableBootoutFailureAcceptsOperationNotPermittedOutput() {
+    func testIsIgnorableBootoutFailureRejectsOperationNotPermittedOutput() {
         let result = TimedProcessResult(
             success: false,
             output: "Boot-out failed: 1: Operation not permitted",
             timedOut: false
         )
-        XCTAssertTrue(PowerDaemonClient.isIgnorableBootoutFailure(result))
+        XCTAssertFalse(PowerDaemonClient.isIgnorableBootoutFailure(result))
+    }
+
+    @MainActor
+    func testRefreshStatusSurfacesSecuritySensitiveFallbackReason() async {
+        let client = FakePowerDaemonClient()
+        client.helperEnabled = true
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "local"),
+                source: .localFallback,
+                fallbackReason: "Helper signature validation failed"
+            )
+        )
+
+        let viewModel = AppViewModel(client: client)
+        await viewModel.refreshStatus()
+
+        XCTAssertEqual(
+            viewModel.lastError,
+            "Using local fallback status: Helper signature validation failed"
+        )
+    }
+
+    @MainActor
+    func testRefreshStatusDoesNotSurfaceNonSecurityFallbackReason() async {
+        let client = FakePowerDaemonClient()
+        client.helperEnabled = true
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "local"),
+                source: .localFallback,
+                fallbackReason: "Helper response timed out after 18 seconds"
+            )
+        )
+
+        let viewModel = AppViewModel(client: client)
+        await viewModel.refreshStatus()
+
+        XCTAssertNil(viewModel.lastError)
+    }
+
+    func testRemainingTimeStringFormatsHoursMinutesAndSeconds() {
+        let now = Date(timeIntervalSinceReferenceDate: 1_000)
+        let endDate = now.addingTimeInterval(3_661)
+
+        let result = AppViewModel.remainingTimeString(until: endDate, now: now)
+
+        XCTAssertEqual(result, "1h 01m 01s")
+    }
+
+    func testDurationLabelFormatsHourAndMinutePresets() {
+        XCTAssertEqual(AppViewModel.durationLabel(for: 45), "45m")
+        XCTAssertEqual(AppViewModel.durationLabel(for: 60), "1h")
+        XCTAssertEqual(AppViewModel.durationLabel(for: 240), "4h")
     }
 
     func testIsIgnorableUnregisterFailureDescriptionRecognizesMissingService() {

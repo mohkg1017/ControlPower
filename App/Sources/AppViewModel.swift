@@ -105,8 +105,14 @@ public final class AppViewModel {
 
     public var remainingSeconds: Int?
     public var selectedDurationMinutes: Int = 60
+    @ObservationIgnored
     private var timerTask: Task<Void, Never>?
+    @ObservationIgnored
     private var startupTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var batteryNotificationTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var wakeNotificationTask: Task<Void, Never>?
     private var timerEndDate: Date?
 
     public var batteryLevel: Int = 100
@@ -118,18 +124,27 @@ public final class AppViewModel {
         }
     }
     @ObservationIgnored public private(set) var desiredNoSleep: Bool = false
-    private var batterySourceRunLoopSource: CFRunLoopSource?
-    private var batteryMonitorContextPointer: UnsafeMutableRawPointer?
-    private var wakeObserver: AnyObject?
+    @ObservationIgnored private var batterySourceRunLoopSource: CFRunLoopSource?
+    @ObservationIgnored private var batteryMonitorContextPointer: UnsafeMutableRawPointer?
+    @ObservationIgnored private var wakeObserver: AnyObject?
 
+    @ObservationIgnored
     private let client: ClientOperations
+    @ObservationIgnored
     private let mutationScheduler: MutationScheduler
+    @ObservationIgnored
     private let isTestEnvironment: Bool
+    @ObservationIgnored
     private let shouldPersistLowBatteryProtection: Bool
+    @ObservationIgnored
     private let shouldPersistDesiredNoSleep: Bool
+    @ObservationIgnored
     private var lowBatteryAutoDisableQueued = false
+    @ObservationIgnored
     private var pendingHelperEnabledRequest: Bool?
+    @ObservationIgnored
     private var wakeReapplyInFlight = false
+    @ObservationIgnored
     private var hasStarted = false
 
     @MainActor
@@ -172,6 +187,9 @@ public final class AppViewModel {
     deinit {
         timerTask?.cancel()
         startupTask?.cancel()
+        batteryNotificationTask?.cancel()
+        wakeNotificationTask?.cancel()
+        mutationScheduler.cancelAll()
         tearDownBatteryMonitoring()
         tearDownWakeMonitoring()
     }
@@ -295,8 +313,15 @@ public final class AppViewModel {
             guard !Task.isCancelled else { return }
             if snapshot != status.snapshot { snapshot = status.snapshot }
             statusSource = status.source
-            lastError = nil
             helperNeedsRepair = status.source == .localFallback && isHelperEnabled
+            if status.source == .localFallback,
+               isHelperEnabled,
+               let reason = status.fallbackReason,
+               shouldSurfaceFallbackReason(reason) {
+                lastError = "Using local fallback status: \(reason)"
+            } else {
+                lastError = nil
+            }
             checkBatterySafety()
         } catch {
             let daemonBroken = await client.isDaemonBroken()
@@ -332,7 +357,7 @@ public final class AppViewModel {
         let target = enabled
         pendingHelperEnabledRequest = target
 
-        enqueueMutation { [weak self] in
+        enqueueMutation(key: "setHelperEnabled") { [weak self] in
             guard let self else { return }
             self.isBusy = true
             defer { self.isBusy = false }
@@ -397,8 +422,8 @@ public final class AppViewModel {
                 guard timerEndDate.timeIntervalSinceNow > 0 else { break }
 
                 let appIsActive = NSApp.isActive
-                let sleepInterval: Duration = appIsActive ? .seconds(1) : .seconds(5)
-                let sleepTolerance: Duration = appIsActive ? .milliseconds(500) : .seconds(1)
+                let sleepInterval: Duration = appIsActive ? .seconds(5) : .seconds(15)
+                let sleepTolerance: Duration = appIsActive ? .seconds(1) : .seconds(3)
                 do {
                     try await Task.sleep(for: sleepInterval, tolerance: sleepTolerance)
                 } catch {
@@ -483,7 +508,7 @@ public final class AppViewModel {
             guard let context else { return }
             let monitorContext = Unmanaged<BatteryMonitorContext>.fromOpaque(context).takeUnretainedValue()
             Task { @MainActor [weak viewModel = monitorContext.viewModel] in
-                viewModel?.updateBatteryLevelFromSystem()
+                viewModel?.scheduleBatteryUpdate()
             }
         }, contextPointer)?.takeRetainedValue() else {
             Unmanaged<BatteryMonitorContext>.fromOpaque(contextPointer).release()
@@ -515,7 +540,7 @@ public final class AppViewModel {
         ) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor [weak self] in
-                await self?.handleSystemWake()
+                self?.scheduleWakeHandling()
             }
         } as AnyObject
     }
@@ -607,7 +632,7 @@ public final class AppViewModel {
             cancelTimer()
         }
         let shouldClearLowBatteryGuard = !enabled
-        enqueueOperation("Set disablesleep to \(enabled ? "1" : "0")") { viewModel in
+        enqueueOperation("Set disablesleep to \(enabled ? "1" : "0")", key: "setDisableSleep") { viewModel in
             defer {
                 if shouldClearLowBatteryGuard {
                     viewModel.lowBatteryAutoDisableQueued = false
@@ -656,8 +681,37 @@ public final class AppViewModel {
         statusSource = status.source
     }
 
-    private func enqueueOperation(_ label: String, operation: @escaping (AppViewModel) async throws -> Void) {
-        enqueueMutation { [weak self] in
+    private func scheduleBatteryUpdate() {
+        guard batteryNotificationTask == nil else { return }
+        batteryNotificationTask = Task { @MainActor [weak self] in
+            defer { self?.batteryNotificationTask = nil }
+            self?.updateBatteryLevelFromSystem()
+        }
+    }
+
+    private func scheduleWakeHandling() {
+        guard wakeNotificationTask == nil else { return }
+        wakeNotificationTask = Task { @MainActor [weak self] in
+            defer { self?.wakeNotificationTask = nil }
+            await self?.handleSystemWake()
+        }
+    }
+
+    private func shouldSurfaceFallbackReason(_ reason: String) -> Bool {
+        let normalized = reason.lowercased()
+        return normalized.contains("signature")
+            || normalized.contains("launch constraint")
+            || normalized.contains("unauthorized")
+            || normalized.contains("token")
+            || normalized.contains("connection")
+    }
+
+    private func enqueueOperation(
+        _ label: String,
+        key: String? = nil,
+        operation: @escaping (AppViewModel) async throws -> Void
+    ) {
+        enqueueMutation(key: key) { [weak self] in
             guard let self else { return }
             self.isBusy = true
             defer { self.isBusy = false }
@@ -670,9 +724,9 @@ public final class AppViewModel {
         }
     }
 
-    private func enqueueMutation(_ mutation: @escaping () async -> Void) {
-        mutationScheduler.enqueue(mutation) { [weak self] in
+    private func enqueueMutation(key: String? = nil, _ mutation: @escaping () async -> Void) {
+        mutationScheduler.enqueue(key: key, mutation, onOverflow: { [weak self] in
             self?.lastError = "Too many pending actions. Please wait for current changes to finish."
-        }
+        })
     }
 }

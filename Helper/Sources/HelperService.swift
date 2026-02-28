@@ -1,6 +1,7 @@
 import Foundation
 import OSLog
 import Synchronization
+import SystemConfiguration
 
 final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable {
     private struct RequestActivityState {
@@ -231,6 +232,12 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
             return false
         }
 
+        guard isAuthorizedConsoleUser(context.effectiveUserIdentifier) else {
+            sessionTokens.withLock { $0.clearToken(for: context.identifier) }
+            logger.error("rejected token for \(action, privacy: .public) from pid \(context.processIdentifier, privacy: .public): unauthorized console user")
+            return false
+        }
+
         let isValid = sessionTokens.withLock { $0.consumeToken(token, for: context.identifier) }
 
         if isValid {
@@ -240,6 +247,25 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
 
         logger.error("rejected token for \(action, privacy: .public) from pid \(context.processIdentifier, privacy: .public)")
         return false
+    }
+
+    nonisolated private func isAuthorizedConsoleUser(_ effectiveUserIdentifier: uid_t) -> Bool {
+        guard let consoleUserIdentifier = currentConsoleUserIdentifier() else {
+            return false
+        }
+        return effectiveUserIdentifier == consoleUserIdentifier
+    }
+
+    nonisolated private func currentConsoleUserIdentifier() -> uid_t? {
+        var userIdentifier: uid_t = 0
+        var groupIdentifier: gid_t = 0
+        guard let username = SCDynamicStoreCopyConsoleUser(nil, &userIdentifier, &groupIdentifier) as String? else {
+            return nil
+        }
+        guard !username.isEmpty, username != "loginwindow" else {
+            return nil
+        }
+        return userIdentifier
     }
 
     nonisolated private func isConnectionDisconnected(_ connectionIdentifier: ObjectIdentifier) -> Bool {
