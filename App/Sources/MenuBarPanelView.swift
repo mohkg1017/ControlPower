@@ -54,7 +54,7 @@ struct MenuBarPanelView: View {
             powerStatusRow
             sleepDisplayRow
 
-            if !viewModel.isHelperEnabled {
+            if viewModel.requiresHelperApproval {
                 HelperApprovalBannerView(compact: true)
             }
 

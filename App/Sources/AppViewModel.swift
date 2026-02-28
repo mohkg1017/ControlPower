@@ -32,7 +32,7 @@ public final class AppViewModel {
         private let setDisableSleepOperation: @Sendable (Bool) async throws -> Void
         private let restoreDefaultsOperation: @Sendable () async throws -> Void
         private let displaySleepNowOperation: @Sendable () async throws -> Void
-        private let isHelperEnabledOperation: @Sendable () -> Bool
+        private let helperStatusOperation: @Sendable () -> HelperDaemonStatus
         private let setHelperEnabledOperation: @Sendable (Bool) async throws -> Void
         private let isDaemonBrokenOperation: @Sendable () async -> Bool
         private let repairDaemonOperation: @Sendable () async throws -> Void
@@ -43,7 +43,7 @@ public final class AppViewModel {
             setDisableSleepOperation = { enabled in try await client.setDisableSleep(enabled) }
             restoreDefaultsOperation = { try await client.restoreDefaults() }
             displaySleepNowOperation = { try await client.displaySleepNow() }
-            isHelperEnabledOperation = { client.isHelperEnabled() }
+            helperStatusOperation = { client.helperStatus() }
             setHelperEnabledOperation = { enabled in try await client.setHelperEnabled(enabled) }
             isDaemonBrokenOperation = { await client.isDaemonBroken() }
             repairDaemonOperation = { try await client.repairDaemon() }
@@ -69,8 +69,8 @@ public final class AppViewModel {
             try await displaySleepNowOperation()
         }
 
-        func isHelperEnabled() -> Bool {
-            isHelperEnabledOperation()
+        func helperStatus() -> HelperDaemonStatus {
+            helperStatusOperation()
         }
 
         func setHelperEnabled(_ enabled: Bool) async throws {
@@ -98,6 +98,7 @@ public final class AppViewModel {
 
     public var snapshot = PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "No status yet")
     public var statusSource: PowerStatusSource = .localFallback
+    public var helperStatus: HelperDaemonStatus = .disabled
     public var isHelperEnabled = false
     public var isBusy = false
     public var lastError: String?
@@ -146,6 +147,8 @@ public final class AppViewModel {
     private var wakeReapplyInFlight = false
     @ObservationIgnored
     private var hasStarted = false
+    @ObservationIgnored
+    private var timerRequestIdentifier = 0
 
     @MainActor
     public convenience init(
@@ -176,7 +179,8 @@ public final class AppViewModel {
         self.desiredNoSleep = shouldPersistDesiredNoSleep
             ? (UserDefaults.standard.object(forKey: Self.desiredNoSleepKey) as? Bool ?? false)
             : false
-        self.isHelperEnabled = clientOperations.isHelperEnabled()
+        self.helperStatus = clientOperations.helperStatus()
+        self.isHelperEnabled = helperStatus == .enabled
         if !isTestEnvironment {
             setupBatteryMonitoring()
             setupWakeMonitoring()
@@ -278,7 +282,7 @@ public final class AppViewModel {
         }
         guard !Task.isCancelled else { return }
 
-        isHelperEnabled = client.isHelperEnabled()
+        refreshHelperStatusFromClient()
         helperNeedsRepair = await client.isDaemonBroken()
         guard !Task.isCancelled else { return }
 
@@ -307,13 +311,17 @@ public final class AppViewModel {
             }
         }
 
-        isHelperEnabled = client.isHelperEnabled()
+        refreshHelperStatusFromClient()
         do {
             let status = try await client.fetchStatus()
             guard !Task.isCancelled else { return }
             if snapshot != status.snapshot { snapshot = status.snapshot }
             statusSource = status.source
-            helperNeedsRepair = status.source == .localFallback && isHelperEnabled
+            if isHelperEnabled {
+                helperNeedsRepair = await client.isDaemonBroken()
+            } else {
+                helperNeedsRepair = false
+            }
             if status.source == .localFallback,
                isHelperEnabled,
                let reason = status.fallbackReason,
@@ -341,7 +349,7 @@ public final class AppViewModel {
             repairErrorMessage = message
             lastError = message
         }
-        isHelperEnabled = client.isHelperEnabled()
+        refreshHelperStatusFromClient()
         isBusy = false
         await refreshStatus(force: true)
         if let repairErrorMessage {
@@ -367,9 +375,9 @@ public final class AppViewModel {
                 }
             }
 
-            let currentHelperState = self.client.isHelperEnabled()
+            self.refreshHelperStatusFromClient()
+            let currentHelperState = self.isHelperEnabled
             if currentHelperState == target {
-                self.isHelperEnabled = currentHelperState
                 self.helperNeedsRepair = currentHelperState ? await self.client.isDaemonBroken() : false
                 self.lastError = nil
                 return
@@ -377,21 +385,22 @@ public final class AppViewModel {
 
             do {
                 try await self.client.setHelperEnabled(target)
-                self.isHelperEnabled = self.client.isHelperEnabled()
+                self.refreshHelperStatusFromClient()
             } catch {
                 self.lastError = "Failed to \(target ? "enable" : "disable") helper: \(error.controlPowerSanitizedDescription)"
-                self.isHelperEnabled = self.client.isHelperEnabled()
+                self.refreshHelperStatusFromClient()
                 self.helperNeedsRepair = self.isHelperEnabled ? await self.client.isDaemonBroken() : false
                 return
             }
 
             do {
                 try await self.refreshSnapshotFromClient()
-                self.helperNeedsRepair = self.statusSource == .localFallback && self.isHelperEnabled
+                self.refreshHelperStatusFromClient()
+                self.helperNeedsRepair = self.isHelperEnabled ? await self.client.isDaemonBroken() : false
                 self.lastError = nil
             } catch {
                 self.lastError = "Helper was \(target ? "enabled" : "disabled"), but status refresh failed: \(error.controlPowerSanitizedDescription)"
-                self.isHelperEnabled = self.client.isHelperEnabled()
+                self.refreshHelperStatusFromClient()
                 self.helperNeedsRepair = self.isHelperEnabled ? await self.client.isDaemonBroken() : false
             }
         }
@@ -409,33 +418,30 @@ public final class AppViewModel {
         cancelTimer()
         let normalizedMinutes = max(0, minutes)
         selectedDurationMinutes = normalizedMinutes
-        remainingSeconds = normalizedMinutes * 60
-        timerEndDate = Date().addingTimeInterval(TimeInterval(normalizedMinutes * 60))
 
-        // Ensure No Sleep is ON
-        if snapshot.disableSleep != true {
-            setDisableSleep(true)
+        if normalizedMinutes == 0 {
+            setDisableSleep(false, forceWrite: true)
+            return
         }
 
-        timerTask = Task { @MainActor [weak self] in
-            while let self, let timerEndDate = self.timerEndDate {
-                guard timerEndDate.timeIntervalSinceNow > 0 else { break }
+        let requestIdentifier = timerRequestIdentifier
+        if snapshot.disableSleep == true {
+            activateTimer(minutes: normalizedMinutes, requestIdentifier: requestIdentifier)
+            return
+        }
 
-                let appIsActive = NSApp.isActive
-                let sleepInterval: Duration = appIsActive ? .seconds(5) : .seconds(15)
-                let sleepTolerance: Duration = appIsActive ? .seconds(1) : .seconds(3)
-                do {
-                    try await Task.sleep(for: sleepInterval, tolerance: sleepTolerance)
-                } catch {
-                    return
-                }
-            }
-            guard let self, !Task.isCancelled else { return }
-            self.finishTimerIfNeeded()
+        enqueueOperation("Start timer", key: "setDisableSleep") { viewModel in
+            guard viewModel.timerRequestIdentifier == requestIdentifier else { return }
+            viewModel.updateDesiredNoSleep(true)
+            try await viewModel.client.setDisableSleep(true)
+            try? await viewModel.refreshSnapshotFromClient()
+            guard viewModel.timerRequestIdentifier == requestIdentifier else { return }
+            viewModel.activateTimer(minutes: normalizedMinutes, requestIdentifier: requestIdentifier)
         }
     }
 
     public func cancelTimer() {
+        timerRequestIdentifier &+= 1
         timerTask?.cancel()
         timerTask = nil
         timerEndDate = nil
@@ -463,6 +469,21 @@ public final class AppViewModel {
             return "Privileged helper"
         case .localFallback:
             return "Local pmset read"
+        }
+    }
+
+    public var requiresHelperApproval: Bool {
+        helperStatus == .requiresApproval
+    }
+
+    public var helperStatusText: String {
+        switch helperStatus {
+        case .enabled:
+            return "Active"
+        case .requiresApproval:
+            return "Needs Approval"
+        case .disabled:
+            return "Disabled"
         }
     }
 
@@ -613,6 +634,31 @@ public final class AppViewModel {
         setDisableSleep(false, forceWrite: true)
     }
 
+    private func activateTimer(minutes: Int, requestIdentifier: Int) {
+        guard timerRequestIdentifier == requestIdentifier else { return }
+
+        remainingSeconds = minutes * 60
+        timerEndDate = Date().addingTimeInterval(TimeInterval(minutes * 60))
+        timerTask = Task { @MainActor [weak self] in
+            while let self, let timerEndDate = self.timerEndDate {
+                guard self.timerRequestIdentifier == requestIdentifier else { return }
+                guard timerEndDate.timeIntervalSinceNow > 0 else { break }
+
+                let appIsActive = NSApp.isActive
+                let sleepInterval: Duration = appIsActive ? .seconds(5) : .seconds(15)
+                let sleepTolerance: Duration = appIsActive ? .seconds(1) : .seconds(3)
+                do {
+                    try await Task.sleep(for: sleepInterval, tolerance: sleepTolerance)
+                } catch {
+                    return
+                }
+            }
+            guard let self, !Task.isCancelled else { return }
+            guard self.timerRequestIdentifier == requestIdentifier else { return }
+            self.finishTimerIfNeeded()
+        }
+    }
+
     func handleSystemWake() async {
         guard desiredNoSleep else { return }
         guard !wakeReapplyInFlight else { return }
@@ -679,6 +725,11 @@ public final class AppViewModel {
         guard !Task.isCancelled else { return }
         if snapshot != status.snapshot { snapshot = status.snapshot }
         statusSource = status.source
+    }
+
+    private func refreshHelperStatusFromClient() {
+        helperStatus = client.helperStatus()
+        isHelperEnabled = helperStatus == .enabled
     }
 
     private func scheduleBatteryUpdate() {

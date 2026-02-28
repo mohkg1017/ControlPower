@@ -25,6 +25,7 @@ public protocol PowerDaemonClientProtocol: Sendable {
     func setDisableSleep(_ enabled: Bool) async throws
     func restoreDefaults() async throws
     func displaySleepNow() async throws
+    func helperStatus() -> HelperDaemonStatus
     func isHelperEnabled() -> Bool
     func setHelperEnabled(_ enabled: Bool) async throws
     func isDaemonBroken() async -> Bool
@@ -127,6 +128,19 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         status == .enabled
     }
 
+    nonisolated static func helperDaemonStatus(from status: SMAppService.Status) -> HelperDaemonStatus {
+        switch status {
+        case .enabled:
+            return .enabled
+        case .requiresApproval:
+            return .requiresApproval
+        case .notRegistered, .notFound:
+            return .disabled
+        @unknown default:
+            return .disabled
+        }
+    }
+
     public func registerDaemonIfNeeded() async throws {
         try await runDetachedUtilityOperation {
             let service = SMAppService.daemon(plistName: PowerHelperConstants.daemonPlistName)
@@ -145,7 +159,11 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
 
     public func isHelperEnabled() -> Bool {
         let service = daemonService
-        return Self.helperStatusAllowsWrites(service.status)
+        return helperStatus() == .enabled
+    }
+
+    public func helperStatus() -> HelperDaemonStatus {
+        Self.helperDaemonStatus(from: daemonService.status)
     }
 
     public func setHelperEnabled(_ enabled: Bool) async throws {

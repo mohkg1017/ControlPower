@@ -158,6 +158,7 @@ schemes:
       targets:
         ControlPower:
           - run
+          - analyze
           - archive
     run:
       config: Debug
@@ -176,6 +177,7 @@ schemes:
       targets:
         ControlPower:
           - run
+          - analyze
           - archive
     run:
       config: Profiling

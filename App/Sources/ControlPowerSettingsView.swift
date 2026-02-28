@@ -17,6 +17,7 @@ struct ControlPowerSettingsView: View {
 
             Section {
                 Toggle("Launch Background Helper at Login", isOn: helperEnabledBinding)
+                    .disabled(viewModel.isBusy)
             } header: {
                 Text("Automation")
             } footer: {

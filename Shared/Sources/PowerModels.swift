@@ -8,6 +8,12 @@ public enum PowerHelperConstants {
     public static let helperExecutableIdentifier = "com.moe.controlpower.helper.bin"
 }
 
+public enum HelperDaemonStatus: Sendable, Equatable {
+    case enabled
+    case requiresApproval
+    case disabled
+}
+
 public struct ClientAuthorizationPolicy: Sendable {
     public let bundleIdentifier: String
     public let teamIdentifier: String?

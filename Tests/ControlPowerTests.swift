@@ -572,6 +572,26 @@ nonisolated final class ControlPowerTests: XCTestCase {
         XCTAssertEqual(client.lastDisableSleepValue, false)
     }
 
+    @MainActor
+    func testStartTimerDoesNotActivateWhenEnableNoSleepFails() async {
+        let client = FakePowerDaemonClient()
+        client.setDisableSleepResult = .failure(FakePowerDaemonClientError.setDisableSleepFailed)
+
+        let viewModel = AppViewModel(client: client)
+        viewModel.snapshot = PMSetSnapshot(disableSleep: false, lidWake: true, summary: "normal")
+
+        viewModel.startTimer(minutes: 30)
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+
+        XCTAssertFalse(viewModel.isTimerActive)
+        XCTAssertNil(viewModel.activeTimerEndDate)
+        XCTAssertEqual(
+            viewModel.lastError,
+            "Start timer failed: set disable sleep failed"
+        )
+    }
+
     func testTimedProcessRunnerReturnsOutputForSuccess() {
         let runner = TimedProcessRunner(executableURL: URL(fileURLWithPath: "/bin/echo"), timeoutSeconds: 1)
         let result = runner.run(arguments: ["hello"])
@@ -1018,6 +1038,7 @@ nonisolated final class ControlPowerTests: XCTestCase {
     func testRepairDaemonFailurePersistsErrorAfterRefresh() async {
         let client = FakePowerDaemonClient()
         client.repairDaemonResult = .failure(FakePowerDaemonClientError.repairFailed)
+        client.daemonBroken = true
         client.fetchStatusResult = .success(
             PowerHelperStatus(
                 snapshot: PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "fallback"),
@@ -1049,6 +1070,7 @@ nonisolated final class ControlPowerTests: XCTestCase {
                 ]
             )
         )
+        client.daemonBroken = true
         client.fetchStatusResult = .success(
             PowerHelperStatus(
                 snapshot: PMSetSnapshot(disableSleep: nil, lidWake: nil, summary: "fallback"),
@@ -1068,6 +1090,28 @@ nonisolated final class ControlPowerTests: XCTestCase {
             "Helper repair failed: macOS blocked the helper launch due to a signing/launch constraint issue. Reinstall /Applications/ControlPower.app and avoid running Debug and release builds at the same time."
         )
         XCTAssertTrue(viewModel.helperNeedsRepair)
+    }
+
+    @MainActor
+    func testRequiresHelperApprovalOnlyWhenStatusIsRequiresApproval() async {
+        let client = FakePowerDaemonClient()
+        client.daemonStatus = .requiresApproval
+        let viewModel = AppViewModel(client: client)
+
+        XCTAssertTrue(viewModel.requiresHelperApproval)
+        XCTAssertEqual(viewModel.helperStatusText, "Needs Approval")
+        XCTAssertFalse(viewModel.isHelperEnabled)
+    }
+
+    @MainActor
+    func testDisabledHelperDoesNotRequireApprovalBannerState() async {
+        let client = FakePowerDaemonClient()
+        client.daemonStatus = .disabled
+        let viewModel = AppViewModel(client: client)
+
+        XCTAssertFalse(viewModel.requiresHelperApproval)
+        XCTAssertEqual(viewModel.helperStatusText, "Disabled")
+        XCTAssertFalse(viewModel.isHelperEnabled)
     }
 
     @MainActor
@@ -1226,10 +1270,11 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
             )
         )
         var repairDaemonResult: Result<Void, Error> = .success(())
-        var helperEnabled = true
+        var helperStatus: HelperDaemonStatus = .enabled
         var setHelperEnabledShouldFail = false
         var holdFetchStatus = false
         var restoreDefaultsResult: Result<Void, Error> = .success(())
+        var setDisableSleepResult: Result<Void, Error> = .success(())
         var daemonBroken = false
         var registerDaemonCallCount = 0
         var fetchStatusCallCount = 0
@@ -1270,8 +1315,17 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
     }
 
     var helperEnabled: Bool {
-        get { state.withLock { $0.helperEnabled } }
-        set { state.withLock { $0.helperEnabled = newValue } }
+        get { state.withLock { $0.helperStatus == .enabled } }
+        set {
+            state.withLock { state in
+                state.helperStatus = newValue ? .enabled : .disabled
+            }
+        }
+    }
+
+    var daemonStatus: HelperDaemonStatus {
+        get { state.withLock { $0.helperStatus } }
+        set { state.withLock { $0.helperStatus = newValue } }
     }
 
     var setHelperEnabledShouldFail: Bool {
@@ -1287,6 +1341,11 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
     var restoreDefaultsResult: Result<Void, Error> {
         get { state.withLock { $0.restoreDefaultsResult } }
         set { state.withLock { $0.restoreDefaultsResult = newValue } }
+    }
+
+    var setDisableSleepResult: Result<Void, Error> {
+        get { state.withLock { $0.setDisableSleepResult } }
+        set { state.withLock { $0.setDisableSleepResult = newValue } }
     }
 
     var fetchStatusCallCount: Int { state.withLock { $0.fetchStatusCallCount } }
@@ -1312,7 +1371,11 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
     }
 
     func isHelperEnabled() -> Bool {
-        state.withLock { $0.helperEnabled }
+        helperStatus() == .enabled
+    }
+
+    func helperStatus() -> HelperDaemonStatus {
+        state.withLock { $0.helperStatus }
     }
 
     func setHelperEnabled(_ enabled: Bool) async throws {
@@ -1332,7 +1395,9 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
         if shouldFail {
             throw FakePowerDaemonClientError.approvalMissing
         }
-        state.withLock { $0.helperEnabled = enabled }
+        state.withLock { state in
+            state.helperStatus = enabled ? .enabled : .disabled
+        }
     }
 
     func isDaemonBroken() async -> Bool {
@@ -1489,17 +1554,18 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
     }
 
     func setDisableSleep(_ enabled: Bool) async throws {
-        let waitContinuation = state.withLock { state -> CheckedContinuation<Void, Never>? in
+        let (waitContinuation, result) = state.withLock { state -> (CheckedContinuation<Void, Never>?, Result<Void, Error>) in
             state.lastDisableSleepValue = enabled
             state.setDisableSleepCallCount += 1
             if let wait = state.mutationCountWait, state.totalMutationCallCount >= wait.expected {
                 state.mutationCountWait = nil
-                return wait.continuation
+                return (wait.continuation, state.setDisableSleepResult)
             }
-            return nil
+            return (nil, state.setDisableSleepResult)
         }
         waitContinuation?.resume()
         await withMutationTracking()
+        try result.get()
     }
 
     func restoreDefaults() async throws {
@@ -1545,6 +1611,7 @@ private final class FakePowerDaemonClient: PowerDaemonClientProtocol, Sendable {
 private enum FakePowerDaemonClientError: LocalizedError, Sendable {
     case approvalMissing
     case repairFailed
+    case setDisableSleepFailed
 
     var errorDescription: String? {
         switch self {
@@ -1552,6 +1619,8 @@ private enum FakePowerDaemonClientError: LocalizedError, Sendable {
             return "approval missing"
         case .repairFailed:
             return "repair failed"
+        case .setDisableSleepFailed:
+            return "set disable sleep failed"
         }
     }
 }

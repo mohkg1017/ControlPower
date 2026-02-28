@@ -83,7 +83,7 @@ private struct OverviewTabView: View {
                 }
                 .padding(.horizontal, 24)
 
-                if !viewModel.isHelperEnabled {
+                if viewModel.requiresHelperApproval {
                     HelperApprovalBannerView(compact: false)
                         .padding(.horizontal, 24)
                 }
@@ -255,16 +255,38 @@ private struct OverviewTabView: View {
                     Divider()
 
                     HStack {
-                        Label("Helper Status", systemImage: viewModel.isHelperEnabled ? "checkmark.shield.fill" : "xmark.shield.fill")
-                            .foregroundStyle(viewModel.isHelperEnabled ? .green : .red)
+                        Label("Helper Status", systemImage: helperStatusIconName)
+                            .foregroundStyle(helperStatusColor)
                         Spacer()
-                        Text(viewModel.isHelperEnabled ? "Active" : "Inactive")
+                        Text(viewModel.helperStatusText)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
                 }
                 .padding(.horizontal, 4)
             }
+        }
+    }
+
+    private var helperStatusIconName: String {
+        switch viewModel.helperStatus {
+        case .enabled:
+            return "checkmark.shield.fill"
+        case .requiresApproval:
+            return "exclamationmark.shield.fill"
+        case .disabled:
+            return "xmark.shield.fill"
+        }
+    }
+
+    private var helperStatusColor: Color {
+        switch viewModel.helperStatus {
+        case .enabled:
+            return .green
+        case .requiresApproval:
+            return .yellow
+        case .disabled:
+            return .secondary
         }
     }
 }
