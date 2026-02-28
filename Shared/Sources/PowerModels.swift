@@ -227,3 +227,40 @@ enum ProcessSigningIdentity {
         return signingInfo[kSecCodeInfoTeamIdentifier as String] as? String
     }
 }
+
+struct HelperConnectionAuthorizationPolicy: Sendable {
+    let hasSigningRequirement: Bool
+    let consoleUserIdentifier: uid_t?
+
+    func allowsConnection(effectiveUserIdentifier: uid_t) -> Bool {
+        guard hasSigningRequirement else {
+            return false
+        }
+        guard let consoleUserIdentifier else {
+            return false
+        }
+        return effectiveUserIdentifier == consoleUserIdentifier
+    }
+}
+
+struct OneTimeSessionTokenStore: Sendable {
+    private var tokens: [ObjectIdentifier: String] = [:]
+
+    mutating func issueToken(for connectionIdentifier: ObjectIdentifier) -> String {
+        let token = UUID().uuidString
+        tokens[connectionIdentifier] = token
+        return token
+    }
+
+    mutating func consumeToken(_ token: String, for connectionIdentifier: ObjectIdentifier) -> Bool {
+        guard let expectedToken = tokens[connectionIdentifier], expectedToken == token else {
+            return false
+        }
+        tokens[connectionIdentifier] = nil
+        return true
+    }
+
+    mutating func clearToken(for connectionIdentifier: ObjectIdentifier) {
+        tokens[connectionIdentifier] = nil
+    }
+}

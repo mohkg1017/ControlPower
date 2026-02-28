@@ -3,8 +3,10 @@ import OSLog
 import Synchronization
 
 final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable {
-    private struct SessionTokenState {
-        var tokens: [ObjectIdentifier: String] = [:]
+    private struct RequestActivityState {
+        var lastActivity = Date()
+        var inFlightRequestCount = 0
+        var isShuttingDown = false
     }
 
     private struct ConnectionContext {
@@ -19,9 +21,8 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
     private let idleTimeoutSeconds: TimeInterval = 120
     private let pmsetValidationError: String? = SystemExecutableValidator.validateExecutable(at: URL(fileURLWithPath: "/usr/bin/pmset"))
     private let operationQueue = DispatchQueue(label: "com.moe.controlpower.helper.pmset", qos: .utility)
-    private let lastActivity = Mutex(Date())
-    private let inFlightRequestCount = Mutex(0)
-    private let sessionTokens = Mutex(SessionTokenState())
+    private let requestActivity = Mutex(RequestActivityState())
+    private let sessionTokens = Mutex(OneTimeSessionTokenStore())
     private let idleTimer: DispatchSourceTimer
 
     override init() {
@@ -32,10 +33,21 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
         timer.schedule(deadline: .now() + .seconds(Int(idleTimeoutSeconds)), repeating: .seconds(30), leeway: .seconds(10))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            let idleDuration = self.lastActivity.withLock { Date().timeIntervalSince($0) }
-            let hasInFlightRequests = self.inFlightRequestCount.withLock { $0 > 0 }
-            if idleDuration >= self.idleTimeoutSeconds && !hasInFlightRequests {
-                exit(EXIT_SUCCESS)
+            let shouldExit = self.requestActivity.withLock { state in
+                guard !state.isShuttingDown else {
+                    return false
+                }
+                let idleDuration = Date().timeIntervalSince(state.lastActivity)
+                guard idleDuration >= self.idleTimeoutSeconds, state.inFlightRequestCount == 0 else {
+                    return false
+                }
+                state.isShuttingDown = true
+                return true
+            }
+            if shouldExit {
+                DispatchQueue.main.async {
+                    CFRunLoopStop(CFRunLoopGetMain())
+                }
             }
         }
         timer.resume()
@@ -46,21 +58,26 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
     }
 
     nonisolated func issueSessionToken(_ reply: @escaping (String) -> Void) {
-        beginRequest()
+        guard beginRequest() else {
+            reply("")
+            return
+        }
         defer { endRequest() }
         guard let context = currentConnectionContext() else {
             reply("")
             return
         }
 
-        let token = UUID().uuidString
-        sessionTokens.withLock { $0.tokens[context.identifier] = token }
+        let token = sessionTokens.withLock { $0.issueToken(for: context.identifier) }
         logger.info("issued session token for pid \(context.processIdentifier, privacy: .public) uid \(context.effectiveUserIdentifier, privacy: .public)")
         reply(token)
     }
 
     nonisolated func ping(_ token: String, _ reply: @escaping (String) -> Void) {
-        beginRequest()
+        guard beginRequest() else {
+            reply("unavailable")
+            return
+        }
         defer { endRequest() }
         guard validateSessionToken(token, action: "ping") else {
             reply("unauthorized")
@@ -70,7 +87,10 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
     }
 
     nonisolated func fetchStatus(_ token: String, _ reply: @escaping @Sendable (Bool, Int, Int, String, String) -> Void) {
-        beginRequest()
+        guard beginRequest() else {
+            reply(false, -1, -1, "", "Helper is shutting down")
+            return
+        }
         guard validateSessionToken(token, action: "fetchStatus") else {
             endRequest()
             reply(false, -1, -1, "", "Unauthorized request token")
@@ -97,7 +117,10 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
     }
 
     nonisolated func setDisableSleep(_ enabled: Bool, token: String, _ reply: @escaping @Sendable (Bool, String) -> Void) {
-        beginRequest()
+        guard beginRequest() else {
+            reply(false, "Helper is shutting down")
+            return
+        }
         guard validateSessionToken(token, action: "setDisableSleep") else {
             endRequest()
             reply(false, "Unauthorized request token")
@@ -112,7 +135,10 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
     }
 
     nonisolated func restoreDefaults(_ token: String, _ reply: @escaping @Sendable (Bool, String) -> Void) {
-        beginRequest()
+        guard beginRequest() else {
+            reply(false, "Helper is shutting down")
+            return
+        }
         guard validateSessionToken(token, action: "restoreDefaults") else {
             endRequest()
             reply(false, "Unauthorized request token")
@@ -133,24 +159,26 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
     }
 
     nonisolated func clearSessionToken(for connectionIdentifier: ObjectIdentifier) {
-        sessionTokens.withLock { $0.tokens[connectionIdentifier] = nil }
+        sessionTokens.withLock { $0.clearToken(for: connectionIdentifier) }
     }
 
-    nonisolated private func beginRequest() {
-        inFlightRequestCount.withLock { $0 += 1 }
-        markActivity()
-    }
-
-    nonisolated private func endRequest() {
-        inFlightRequestCount.withLock { count in
-            if count > 0 {
-                count -= 1
+    nonisolated private func beginRequest() -> Bool {
+        requestActivity.withLock { state in
+            guard !state.isShuttingDown else {
+                return false
             }
+            state.inFlightRequestCount += 1
+            state.lastActivity = Date()
+            return true
         }
     }
 
-    nonisolated private func markActivity() {
-        lastActivity.withLock { $0 = Date() }
+    nonisolated private func endRequest() {
+        requestActivity.withLock { state in
+            if state.inFlightRequestCount > 0 {
+                state.inFlightRequestCount -= 1
+            }
+        }
     }
 
     nonisolated private func currentConnectionContext() -> ConnectionContext? {
@@ -170,13 +198,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
             return false
         }
 
-        let isValid = sessionTokens.withLock { state -> Bool in
-            guard let expectedToken = state.tokens[context.identifier], expectedToken == token else {
-                return false
-            }
-            state.tokens[context.identifier] = nil
-            return true
-        }
+        let isValid = sessionTokens.withLock { $0.consumeToken(token, for: context.identifier) }
 
         if isValid {
             logger.info("accepted token for \(action, privacy: .public) from pid \(context.processIdentifier, privacy: .public)")

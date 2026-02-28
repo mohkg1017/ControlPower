@@ -67,7 +67,8 @@ public struct TimedProcessRunner: Sendable {
 
     public func run(
         arguments: [String],
-        cancellation: TimedProcessCancellation? = nil
+        cancellation: TimedProcessCancellation? = nil,
+        onProcessStarted: (@Sendable () -> Void)? = nil
     ) -> TimedProcessResult {
         if cancellation?.isCancelled == true {
             return cancelledResult()
@@ -89,6 +90,7 @@ public struct TimedProcessRunner: Sendable {
 
         do {
             try process.run()
+            onProcessStarted?()
         } catch {
             return TimedProcessResult(success: false, output: error.localizedDescription, timedOut: false)
         }

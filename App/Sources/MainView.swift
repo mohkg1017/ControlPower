@@ -31,68 +31,42 @@ struct MainView: View {
             .navigationTitle("ControlPower")
         } detail: {
             ZStack {
-                tahoeBackground
+                TahoeBackgroundView(showAnimatedMesh: selectedTab == .overview)
 
                 switch selectedTab {
                 case .overview:
-                    overviewView
+                    OverviewTabView(viewModel: viewModel)
                 case .settings:
-                    settingsView
+                    ControlPowerSettingsView(viewModel: viewModel)
+                        .scrollContentBackground(.hidden)
+                        .navigationTitle("Settings")
                 case .advanced:
-                    advancedView
+                    AdvancedStatusTabView(viewModel: viewModel)
                 case .about:
-                    aboutView
+                    AboutTabView()
                 }
             }
             .transition(.opacity)
         }
     }
 
-    private var aboutView: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .frame(width: 128, height: 128)
-                .shadow(radius: 10)
-            
-            VStack(spacing: 8) {
-                Text("ControlPower")
-                    .font(.largeTitle.bold())
-                
-                Text(AppViewModel.appVersion)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            
-            Divider()
-                .frame(maxWidth: 200)
-            
-            VStack(spacing: 4) {
-                Text("Made By Moe")
-                    .font(.headline)
-
-                if let profileURL = URL(string: "https://x.com/mohkg1017") {
-                    Link("@mohkg1017", destination: profileURL)
-                        .font(.subheadline)
-                        .foregroundStyle(Color.accentColor)
-                }
-            }
-            .padding(.top, 10)
-            
-            Spacer()
-            
-            Text("© 2026 Moe. All rights reserved.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .padding(.bottom, 20)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationTitle("About")
+    private var selectedTab: Tab {
+        Tab(rawValue: selectedTabStorage) ?? .overview
     }
 
-    private var overviewView: some View {
+    private var selectedTabBinding: Binding<Tab?> {
+        Binding(
+            get: { selectedTab },
+            set: { selectedTabStorage = ($0 ?? .overview).rawValue }
+        )
+    }
+}
+
+private struct OverviewTabView: View {
+    @Bindable var viewModel: AppViewModel
+    private let timerDurations = [30, 60, 120, 240]
+
+    var body: some View {
         ScrollView {
             VStack(spacing: 24) {
                 statusHeader
@@ -143,12 +117,6 @@ struct MainView: View {
         }
     }
 
-    private var settingsView: some View {
-        ControlPowerSettingsView(viewModel: viewModel)
-            .scrollContentBackground(.hidden)
-            .navigationTitle("Settings")
-    }
-
     private var statusHeader: some View {
         VStack(spacing: 12) {
             ZStack {
@@ -197,17 +165,24 @@ struct MainView: View {
                         .font(.caption.bold())
                     }
                 }
-                
+
                 HStack(spacing: 8) {
-                    ForEach([30, 60, 120, 240], id: \.self) { mins in
+                    ForEach(timerDurations, id: \.self) { minutes in
+                        let isSelected = viewModel.selectedDurationMinutes == minutes && viewModel.remainingSeconds != nil
                         Button {
-                            viewModel.startTimer(minutes: mins)
+                            viewModel.startTimer(minutes: minutes)
                         } label: {
-                            Text(AppViewModel.durationLabel(for: mins))
-                                .frame(maxWidth: .infinity)
+                            HStack(spacing: 6) {
+                                if isSelected {
+                                    Image(systemName: "checkmark.circle.fill")
+                                }
+                                Text(AppViewModel.durationLabel(for: minutes))
+                            }
+                            .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
-                        .tint(viewModel.selectedDurationMinutes == mins && viewModel.remainingSeconds != nil ? .orange : .secondary)
+                        .tint(isSelected ? .orange : .secondary)
+                        .accessibilityValue(isSelected ? "Selected" : "Not selected")
                     }
                 }
             }
@@ -282,18 +257,22 @@ struct MainView: View {
             }
         }
     }
+}
 
-    private var advancedView: some View {
+private struct AdvancedStatusTabView: View {
+    @Bindable var viewModel: AppViewModel
+
+    var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 advancedHeader
                 advancedTerminalBox
                 GroupBox("Key Parameter Descriptions") {
                     VStack(alignment: .leading, spacing: 12) {
-                        parameterDesc(key: "SleepDisabled", desc: "If 1, system-wide sleep is inhibited.")
-                        parameterDesc(key: "lidwake", desc: "Wake the machine when the lid is opened.")
-                        parameterDesc(key: "standby", desc: "Machine will go into standby mode.")
-                        parameterDesc(key: "powernap", desc: "Periodic wake for background tasks.")
+                        parameterDescription(key: "SleepDisabled", description: "If 1, system-wide sleep is inhibited.")
+                        parameterDescription(key: "lidwake", description: "Wake the machine when the lid is opened.")
+                        parameterDescription(key: "standby", description: "Machine will go into standby mode.")
+                        parameterDescription(key: "powernap", description: "Periodic wake for background tasks.")
                     }
                     .padding(8)
                 }
@@ -330,14 +309,37 @@ struct MainView: View {
 
     private var advancedTerminalBox: some View {
         VStack(alignment: .leading, spacing: 0) {
-            advancedTerminalHeaderBar
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(.red.opacity(0.6))
+                    .frame(width: 10, height: 10)
+                    .accessibilityHidden(true)
+                Circle()
+                    .fill(.orange.opacity(0.6))
+                    .frame(width: 10, height: 10)
+                    .accessibilityHidden(true)
+                Circle()
+                    .fill(.green.opacity(0.6))
+                    .frame(width: 10, height: 10)
+                    .accessibilityHidden(true)
+                Spacer()
+                Text("pmset -g")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.primary.opacity(0.05))
 
             Divider()
 
-            advancedTerminalOutput
+            Text(viewModel.snapshot.summary.isEmpty ? "No pmset output yet" : viewModel.snapshot.summary)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.92))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.primary.opacity(0.1), lineWidth: 1)
@@ -345,69 +347,78 @@ struct MainView: View {
         .padding(.horizontal, 24)
     }
 
-    private var advancedTerminalHeaderBar: some View {
-        HStack(spacing: 6) {
-            Circle().fill(.red.opacity(0.6)).frame(width: 10, height: 10)
-            Circle().fill(.orange.opacity(0.6)).frame(width: 10, height: 10)
-            Circle().fill(.green.opacity(0.6)).frame(width: 10, height: 10)
-            Spacer()
-            Text("pmset -g")
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.tertiary)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.primary.opacity(0.05))
-    }
-
-    private var advancedTerminalOutput: some View {
-        Text(advancedTerminalSummaryText)
-            .font(.system(.body, design: .monospaced))
-            .textSelection(.enabled)
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var advancedTerminalSummaryText: String {
-        viewModel.snapshot.summary.isEmpty ? "No pmset output yet" : viewModel.snapshot.summary
-    }
-
-    private func parameterDesc(key: String, desc: String) -> some View {
+    private func parameterDescription(key: String, description: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Text(key)
                 .font(.system(.caption, design: .monospaced))
                 .fontWeight(.bold)
                 .frame(width: 110, alignment: .leading)
                 .foregroundStyle(Color.accentColor)
-            
-            Text(desc)
+
+            Text(description)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
     }
+}
 
-    private var tahoeBackground: some View {
+private struct AboutTabView: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 128, height: 128)
+                .shadow(radius: 10)
+
+            VStack(spacing: 8) {
+                Text("ControlPower")
+                    .font(.largeTitle.bold())
+
+                Text(AppViewModel.appVersion)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+                .frame(maxWidth: 200)
+
+            VStack(spacing: 4) {
+                Text("Made By Moe")
+                    .font(.headline)
+
+                if let profileURL = URL(string: "https://x.com/mohkg1017") {
+                    Link("@mohkg1017", destination: profileURL)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .padding(.top, 10)
+
+            Spacer()
+
+            Text("© 2026 Moe. All rights reserved.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .padding(.bottom, 20)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle("About")
+    }
+}
+
+private struct TahoeBackgroundView: View {
+    let showAnimatedMesh: Bool
+
+    var body: some View {
         ZStack {
             Color(nsColor: .windowBackgroundColor)
-            if selectedTab == .overview {
+            if showAnimatedMesh {
                 AnimatedTahoeBackground()
             }
         }
     }
-
-    // MARK: - Helpers
-
-    private var selectedTab: Tab {
-        Tab(rawValue: selectedTabStorage) ?? .overview
-    }
-
-    private var selectedTabBinding: Binding<Tab?> {
-        Binding(
-            get: { selectedTab },
-            set: { selectedTabStorage = ($0 ?? .overview).rawValue }
-        )
-    }
-
 }
 
 extension PowerStatusTint {
@@ -432,7 +443,7 @@ private struct AnimatedTahoeBackground: View {
                 StaticMeshLayer()
                     .allowsHitTesting(false)
             } else {
-                TimelineView(.periodic(from: .now, by: 3.0)) { context in
+                TimelineView(.periodic(from: .now, by: 5.0)) { context in
                     AnimatedMeshLayer(phase: context.date.timeIntervalSinceReferenceDate)
                 }
                 .allowsHitTesting(false)
@@ -461,8 +472,7 @@ private struct AnimatedMeshLayer: View {
             .init(0, 1), .init(0.5, 1), .init(1, 1)
         ], colors: Self.colors)
         .ignoresSafeArea()
-        .blur(radius: 12)
-        .drawingGroup()
+        .blur(radius: 8)
     }
 }
 
@@ -480,8 +490,7 @@ private struct StaticMeshLayer: View {
 
     var body: some View {
         MeshGradient(width: 3, height: 3, points: Self.points, colors: Self.colors)
-        .ignoresSafeArea()
-        .blur(radius: 12)
-        .drawingGroup()
+            .ignoresSafeArea()
+            .blur(radius: 8)
     }
 }

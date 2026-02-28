@@ -199,6 +199,24 @@ nonisolated final class ControlPowerTests: XCTestCase {
     }
 
     @MainActor
+    func testRefreshFailureClearsHelperRepairFlagWhenDaemonHealthy() async {
+        let client = FakePowerDaemonClient()
+        client.helperEnabled = true
+        client.daemonBroken = false
+        client.fetchStatusResult = .failure(
+            NSError(domain: "Test", code: 201, userInfo: [NSLocalizedDescriptionKey: "refresh failed"])
+        )
+
+        let viewModel = AppViewModel(client: client)
+        viewModel.helperNeedsRepair = true
+
+        await viewModel.refreshStatus()
+
+        XCTAssertFalse(viewModel.helperNeedsRepair)
+        XCTAssertEqual(viewModel.lastError, "Refresh status failed: refresh failed")
+    }
+
+    @MainActor
     func testToggleHelperSuccessRefreshesStatus() async {
         let client = FakePowerDaemonClient()
         client.fetchStatusResult = .success(
@@ -252,6 +270,7 @@ nonisolated final class ControlPowerTests: XCTestCase {
 
         await client.waitForSetHelperEnabledCallCount(2)
         await client.waitForIdleMutations()
+        await waitForCondition { client.helperEnabled && viewModel.isHelperEnabled }
 
         XCTAssertTrue(client.helperEnabled)
         XCTAssertTrue(viewModel.isHelperEnabled)
@@ -555,11 +574,16 @@ nonisolated final class ControlPowerTests: XCTestCase {
     func testTimedProcessRunnerCancelsProcess() async {
         let runner = TimedProcessRunner(executableURL: URL(fileURLWithPath: "/bin/sleep"), timeoutSeconds: 10)
         let cancellation = TimedProcessCancellation()
+        let (startedStream, startedContinuation) = AsyncStream.makeStream(of: Void.self)
 
         let task = Task.detached(priority: .utility) {
-            runner.run(arguments: ["5"], cancellation: cancellation)
+            runner.run(arguments: ["5"], cancellation: cancellation) {
+                startedContinuation.yield()
+                startedContinuation.finish()
+            }
         }
-        try? await Task.sleep(for: .milliseconds(150))
+        var iterator = startedStream.makeAsyncIterator()
+        _ = await iterator.next()
         cancellation.cancel()
 
         let result = await task.value
@@ -657,6 +681,53 @@ nonisolated final class ControlPowerTests: XCTestCase {
 
         XCTAssertFalse(policy.isAuthorizedClient(bundleIdentifier: "com.moe.controlpower", teamIdentifier: nil))
         XCTAssertFalse(policy.isAuthorizedClient(bundleIdentifier: "com.moe.controlpower", teamIdentifier: "TEAM123"))
+    }
+
+    func testHelperConnectionAuthorizationPolicyRequiresSigningRequirement() {
+        let policy = HelperConnectionAuthorizationPolicy(
+            hasSigningRequirement: false,
+            consoleUserIdentifier: 501
+        )
+
+        XCTAssertFalse(policy.allowsConnection(effectiveUserIdentifier: 501))
+    }
+
+    func testHelperConnectionAuthorizationPolicyRequiresConsoleUserIdentifier() {
+        let policy = HelperConnectionAuthorizationPolicy(
+            hasSigningRequirement: true,
+            consoleUserIdentifier: nil
+        )
+
+        XCTAssertFalse(policy.allowsConnection(effectiveUserIdentifier: 501))
+    }
+
+    func testHelperConnectionAuthorizationPolicyRequiresEffectiveUserMatch() {
+        let policy = HelperConnectionAuthorizationPolicy(
+            hasSigningRequirement: true,
+            consoleUserIdentifier: 501
+        )
+
+        XCTAssertTrue(policy.allowsConnection(effectiveUserIdentifier: 501))
+        XCTAssertFalse(policy.allowsConnection(effectiveUserIdentifier: 502))
+    }
+
+    func testOneTimeSessionTokenStoreConsumesTokenExactlyOnce() {
+        let identifier = ObjectIdentifier(NSString(string: "connection"))
+        var store = OneTimeSessionTokenStore()
+        let token = store.issueToken(for: identifier)
+
+        XCTAssertTrue(store.consumeToken(token, for: identifier))
+        XCTAssertFalse(store.consumeToken(token, for: identifier))
+    }
+
+    func testOneTimeSessionTokenStoreClearsOutstandingToken() {
+        let identifier = ObjectIdentifier(NSString(string: "connection"))
+        var store = OneTimeSessionTokenStore()
+        let token = store.issueToken(for: identifier)
+
+        store.clearToken(for: identifier)
+
+        XCTAssertFalse(store.consumeToken(token, for: identifier))
     }
 
     func testTrustedClientRequirementStringRequiresTeamIdentifier() {
@@ -1053,7 +1124,9 @@ nonisolated final class ControlPowerTests: XCTestCase {
 
     @MainActor
     private func waitForCondition(
-        timeoutNanoseconds: UInt64 = 1_000_000_000,
+        timeoutNanoseconds: UInt64 = 2_000_000_000,
+        file: StaticString = #filePath,
+        line: UInt = #line,
         condition: @escaping @MainActor () -> Bool
     ) async {
         let interval: UInt64 = 10_000_000
@@ -1065,6 +1138,11 @@ nonisolated final class ControlPowerTests: XCTestCase {
             try? await Task.sleep(nanoseconds: interval)
             elapsed += interval
         }
+        XCTFail(
+            "Timed out waiting for condition after \(Double(timeoutNanoseconds) / 1_000_000_000) seconds",
+            file: file,
+            line: line
+        )
     }
 }
 

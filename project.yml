@@ -156,14 +156,15 @@ schemes:
   ControlPower:
     build:
       targets:
-        ControlPower: all
+        ControlPower:
+          - run
+          - archive
     run:
       config: Debug
     test:
       config: Debug
       gatherCoverageData: true
       coverageTargets:
-        - ControlPower
         - ControlPowerCore
       targets:
         - name: ControlPowerTests
@@ -173,14 +174,15 @@ schemes:
   ControlPowerProfiling:
     build:
       targets:
-        ControlPower: all
+        ControlPower:
+          - run
+          - archive
     run:
       config: Profiling
     test:
       config: Debug
       gatherCoverageData: true
       coverageTargets:
-        - ControlPower
         - ControlPowerCore
       targets:
         - name: ControlPowerTests

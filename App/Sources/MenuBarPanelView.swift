@@ -40,6 +40,8 @@ struct MenuBarPanelView: View {
             .buttonStyle(.plain)
             .disabled(viewModel.isBusy)
             .symbolEffect(.bounce, value: viewModel.isBusy)
+            .accessibilityLabel("Refresh Status")
+            .accessibilityHint("Refreshes current power status")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

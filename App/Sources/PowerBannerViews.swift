@@ -17,6 +17,7 @@ struct HelperApprovalBannerView: View {
         HStack(spacing: 12) {
             Image(systemName: "exclamationmark.shield.fill")
                 .foregroundStyle(.yellow)
+                .accessibilityHidden(true)
             messageSection
             Spacer()
             Button(compact ? "Approve" : "Open Settings") {
@@ -57,6 +58,7 @@ struct HelperRepairBannerView: View {
         HStack(spacing: 12) {
             Image(systemName: "wrench.trianglebadge.exclamationmark")
                 .foregroundStyle(.orange)
+                .accessibilityHidden(true)
             messageSection
             Spacer()
             Button("Repair") {
@@ -97,6 +99,7 @@ struct ErrorBannerView: View {
         HStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red)
+                .accessibilityHidden(true)
             Text(message)
                 .font(compact ? .caption2 : .caption)
                 .lineLimit(compact ? 2 : nil)

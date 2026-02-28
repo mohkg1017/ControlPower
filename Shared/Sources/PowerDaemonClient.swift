@@ -579,9 +579,8 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     nonisolated static func helperLaunchDiagnostics(fromLaunchctlOutput output: String) -> HelperLaunchDiagnostics {
-        let normalizedOutput = output.lowercased()
-        let spawnFailed = normalizedOutput.contains("job state = spawn failed")
-            || normalizedOutput.contains("spawn failed")
+        let spawnFailed = containsCaseInsensitive(output, needle: "job state = spawn failed")
+            || containsCaseInsensitive(output, needle: "spawn failed")
         var lastExitCode: Int?
         var lastExitDescription: String?
         var parentBundleIdentifier: String?
@@ -612,10 +611,10 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         }
 
         let launchConstraintViolation =
-            normalizedOutput.contains("launch constraint violation")
-            || normalizedOutput.contains("code signature invalid")
+            containsCaseInsensitive(output, needle: "launch constraint violation")
+            || containsCaseInsensitive(output, needle: "code signature invalid")
             || (spawnFailed && lastExitCode == 78)
-            || (lastExitDescription?.lowercased().contains("ex_config") ?? false)
+            || (lastExitDescription?.range(of: "ex_config", options: .caseInsensitive) != nil)
 
         return HelperLaunchDiagnostics(
             spawnFailed: spawnFailed,
@@ -641,9 +640,8 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
         forKey key: String,
         inLaunchctlLine line: String
     ) -> String? {
-        let lowercasedLine = line.lowercased()
-        let prefix = "\(key.lowercased()) = "
-        guard lowercasedLine.hasPrefix(prefix) else {
+        let prefix = "\(key) = "
+        guard line.range(of: prefix, options: [.anchored, .caseInsensitive]) != nil else {
             return nil
         }
 
@@ -653,6 +651,10 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             return nil
         }
         return rawValue
+    }
+
+    nonisolated private static func containsCaseInsensitive(_ value: String, needle: String) -> Bool {
+        value.range(of: needle, options: .caseInsensitive) != nil
     }
 
     nonisolated private static func fetchHelperLaunchDiagnostics() async -> HelperLaunchDiagnostics? {

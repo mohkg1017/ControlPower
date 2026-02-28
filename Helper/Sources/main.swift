@@ -86,13 +86,11 @@ final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate {
     }
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
-        guard authorizationRequirementString != nil else {
-            return false
-        }
-        guard let consoleUserIdentifier = currentConsoleUserIdentifier() else {
-            return false
-        }
-        guard newConnection.effectiveUserIdentifier == consoleUserIdentifier else {
+        let authorizationPolicy = HelperConnectionAuthorizationPolicy(
+            hasSigningRequirement: authorizationRequirementString != nil,
+            consoleUserIdentifier: currentConsoleUserIdentifier()
+        )
+        guard authorizationPolicy.allowsConnection(effectiveUserIdentifier: newConnection.effectiveUserIdentifier) else {
             return false
         }
         let connectionIdentifier = ObjectIdentifier(newConnection)

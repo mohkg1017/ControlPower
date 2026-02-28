@@ -283,9 +283,8 @@ public final class AppViewModel {
             helperNeedsRepair = status.source == .localFallback && isHelperEnabled
             checkBatterySafety()
         } catch {
-            if await client.isDaemonBroken() {
-                helperNeedsRepair = true
-            }
+            let daemonBroken = await client.isDaemonBroken()
+            helperNeedsRepair = isHelperEnabled && daemonBroken
             lastError = "Refresh status failed: \(error.controlPowerSanitizedDescription)"
         }
     }

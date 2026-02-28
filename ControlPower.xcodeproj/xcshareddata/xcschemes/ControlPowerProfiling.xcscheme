@@ -8,11 +8,11 @@
       runPostActionsOnFailure = "NO">
       <BuildActionEntries>
          <BuildActionEntry
-            buildForTesting = "YES"
+            buildForTesting = "NO"
             buildForRunning = "YES"
-            buildForProfiling = "YES"
+            buildForProfiling = "NO"
             buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
+            buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "DDFA29E39BC6708898D3884F"
@@ -33,9 +33,9 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "DDFA29E39BC6708898D3884F"
-            BuildableName = "ControlPower.app"
-            BlueprintName = "ControlPower"
+            BlueprintIdentifier = "B9B5DE982B6F9CCF37E51AFA"
+            BuildableName = "ControlPowerTests.xctest"
+            BlueprintName = "ControlPowerTests"
             ReferencedContainer = "container:ControlPower.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
@@ -55,13 +55,6 @@
       <CommandLineArguments>
       </CommandLineArguments>
       <CodeCoverageTargets>
-         <BuildableReference
-            BuildableIdentifier = "primary"
-            BlueprintIdentifier = "DDFA29E39BC6708898D3884F"
-            BuildableName = "ControlPower.app"
-            BlueprintName = "ControlPower"
-            ReferencedContainer = "container:ControlPower.xcodeproj">
-         </BuildableReference>
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A46B809F0CBBD8B00C41631D"
