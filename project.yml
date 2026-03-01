@@ -95,7 +95,7 @@ targets:
       - path: App/Resources/Assets.xcassets
       - path: App/Resources/Info.plist
       - path: App/Resources/PrivacyInfo.xcprivacy
-      - path: LaunchDaemons/com.moe.controlpower.helper.plist
+      - path: LaunchDaemons/com.moe.controlpower.helper.v2.plist
         buildPhase:
           copyFiles:
             destination: wrapper
@@ -115,7 +115,7 @@ targets:
           if [[ -z "$helper" || ! -r "$helper" ]]; then
             helper="${SCRIPT_INPUT_FILE_1:-}"
           fi
-          destination="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/ControlPowerHelper"
+          destination="$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/ControlPowerHelper"
           if [[ -z "$helper" || ! -r "$helper" ]]; then
             echo "error: missing readable helper binary from script inputs"
             exit 1
@@ -125,7 +125,7 @@ targets:
           - $(BUILT_PRODUCTS_DIR)/ControlPowerHelper
           - $(DSTROOT)/usr/local/bin/ControlPowerHelper
         outputFiles:
-          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ControlPowerHelper
+          - $(TARGET_BUILD_DIR)/$(EXECUTABLE_FOLDER_PATH)/ControlPowerHelper
     settings:
       base:
         PRODUCT_NAME: ControlPower

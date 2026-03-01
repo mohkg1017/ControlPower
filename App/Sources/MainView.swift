@@ -75,7 +75,7 @@ private struct OverviewTabView: View {
                     mainActionButton
                     sleepDisplayButton
 
-                    if viewModel.snapshot.disableSleep == true {
+                    if viewModel.disableSleepDisplayValue {
                         timerControls
                     }
 
@@ -205,15 +205,15 @@ private struct OverviewTabView: View {
             viewModel.toggleDisableSleep()
         } label: {
             HStack {
-                Image(systemName: (viewModel.snapshot.disableSleep ?? false) ? "moon.zzz.fill" : "sun.max.fill")
-                Text((viewModel.snapshot.disableSleep ?? false) ? "Allow System Sleep" : "Prevent System Sleep")
+                Image(systemName: viewModel.disableSleepDisplayValue ? "moon.zzz.fill" : "sun.max.fill")
+                Text(viewModel.disableSleepDisplayValue ? "Allow System Sleep" : "Prevent System Sleep")
                     .fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
         }
         .buttonStyle(.borderedProminent)
-        .tint(viewModel.snapshot.disableSleep == true ? .orange : .accentColor)
+        .tint(viewModel.disableSleepDisplayValue ? .orange : .accentColor)
         .controlSize(.large)
         .disabled(viewModel.isBusy)
     }

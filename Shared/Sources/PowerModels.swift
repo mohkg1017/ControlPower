@@ -2,9 +2,9 @@ import Foundation
 import Security
 
 public enum PowerHelperConstants {
-    public static let daemonPlistName = "com.moe.controlpower.helper.plist"
-    public static let daemonLabel = "com.moe.controlpower.helper"
-    public static let machServiceName = "com.moe.controlpower.helper.mach"
+    public static let daemonPlistName = "com.moe.controlpower.helper.v2.plist"
+    public static let daemonLabel = "com.moe.controlpower.helper.v2"
+    public static let machServiceName = "com.moe.controlpower.helper.v2.mach"
     public static let helperExecutableIdentifier = "com.moe.controlpower.helper.bin"
 }
 
@@ -94,20 +94,40 @@ public struct PMSetSnapshot: Equatable, Sendable {
 
 public enum PMSetParser {
     public static func parse(_ text: String) -> PMSetSnapshot {
-        var disableSleep: Bool?
+        var disableSleepByFlag: Bool?
+        var sleepMinutes: Int?
         var lidWake: Bool?
 
         for line in text.split(whereSeparator: \.isNewline) {
-            if disableSleep == nil {
-                disableSleep = parseBooleanValue(key: "SleepDisabled", inLine: line)
+            if disableSleepByFlag == nil {
+                disableSleepByFlag = parseBooleanValue(key: "SleepDisabled", inLine: line)
+            }
+            if sleepMinutes == nil {
+                sleepMinutes = parseIntegerValue(key: "sleep", inLine: line)
             }
             if lidWake == nil {
                 lidWake = parseBooleanValue(key: "lidwake", inLine: line)
             }
-            if disableSleep != nil && lidWake != nil {
+            if disableSleepByFlag != nil && sleepMinutes != nil && lidWake != nil {
                 break
             }
         }
+
+        let disableSleep: Bool? = {
+            let disableByTimer = sleepMinutes.map { $0 == 0 }
+            switch (disableSleepByFlag, disableByTimer) {
+            case (.some(true), _):
+                return true
+            case (.some(false), .some(let timerDisabled)):
+                return timerDisabled
+            case (.some(false), nil):
+                return false
+            case (nil, .some(let timerDisabled)):
+                return timerDisabled
+            case (nil, nil):
+                return nil
+            }
+        }()
 
         return PMSetSnapshot(
             disableSleep: disableSleep,
@@ -130,6 +150,24 @@ public enum PMSetParser {
         if value == "1" { return true }
         if value == "0" { return false }
         return nil
+    }
+
+    private static func parseIntegerValue(key: String, inLine line: Substring) -> Int? {
+        let trimmed = line.drop(while: \.isWhitespace)
+        guard trimmed.hasPrefix(key) else {
+            return nil
+        }
+
+        let valueSlice = trimmed.dropFirst(key.count).drop(while: \.isWhitespace)
+        guard !valueSlice.isEmpty else {
+            return nil
+        }
+
+        let integerChars = valueSlice.prefix { $0.isNumber || $0 == "-" }
+        guard !integerChars.isEmpty else {
+            return nil
+        }
+        return Int(integerChars)
     }
 }
 
@@ -243,7 +281,7 @@ struct HelperConnectionAuthorizationPolicy: Sendable {
             return false
         }
         guard let consoleUserIdentifier else {
-            return false
+            return effectiveUserIdentifier != 0
         }
         return effectiveUserIdentifier == consoleUserIdentifier
     }

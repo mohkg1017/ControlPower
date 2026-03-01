@@ -32,6 +32,24 @@ struct PMSetParserSwiftTestingTests {
             ),
             ParseCase(
                 input: """
+                Currently in use:
+                 sleep                0
+                 lidwake              1
+                """,
+                expectedDisableSleep: true,
+                expectedLidWake: true
+            ),
+            ParseCase(
+                input: """
+                Currently in use:
+                 sleep                15
+                 lidwake              1
+                """,
+                expectedDisableSleep: false,
+                expectedLidWake: true
+            ),
+            ParseCase(
+                input: """
 
                 System-wide power settings:
                  SleepDisabled 0

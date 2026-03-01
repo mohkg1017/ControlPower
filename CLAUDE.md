@@ -54,7 +54,7 @@ DEVELOPER_ID_APP='Developer ID Application: ...' NOTARY_PROFILE='notary-profile'
 
 ### IPC Pattern
 
-The app and helper communicate via Mach service XPC (`com.moe.controlpower.helper.mach`):
+The app and helper communicate via Mach service XPC (`com.moe.controlpower.helper.v2.mach`):
 
 1. Helper binary is embedded at `Contents/Resources/ControlPowerHelper`
 2. LaunchDaemon plist registered via `SMAppService.daemon(plistName:)` — starts on demand

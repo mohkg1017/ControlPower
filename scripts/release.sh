@@ -15,6 +15,9 @@ VERSION="${1:-1.0.0}"
 BUILD="${2:-1}"
 TEST_CONFIGURATION="${TEST_CONFIGURATION:-Debug}"
 TEST_DESTINATION="${TEST_DESTINATION:-platform=macOS,arch=$(uname -m)}"
+TEST_TIMEOUTS_ENABLED="${TEST_TIMEOUTS_ENABLED:-YES}"
+DEFAULT_TEST_EXECUTION_TIMEOUT="${DEFAULT_TEST_EXECUTION_TIMEOUT:-120}"
+MAX_TEST_EXECUTION_TIMEOUT="${MAX_TEST_EXECUTION_TIMEOUT:-600}"
 
 if [[ -z "${DEVELOPER_ID_APP:-}" ]]; then
   echo "error: DEVELOPER_ID_APP is required for release builds"
@@ -78,6 +81,27 @@ mkdir -p "$ARCHIVES" "$EXPORT_DIR"
 run_tests_once() {
   local attempt="$1"
   local log_file="$BUILD_DIR/test-attempt-${attempt}.log"
+  local result_bundle="$BUILD_DIR/test-attempt-${attempt}.xcresult"
+  local timeout_args=()
+
+  rm -rf "$result_bundle"
+
+  if [[ "$TEST_TIMEOUTS_ENABLED" == "YES" ]]; then
+    timeout_args=(
+      -test-timeouts-enabled YES
+      -default-test-execution-time-allowance "$DEFAULT_TEST_EXECUTION_TIMEOUT"
+      -maximum-test-execution-time-allowance "$MAX_TEST_EXECUTION_TIMEOUT"
+    )
+  else
+    timeout_args=(-test-timeouts-enabled NO)
+  fi
+
+  echo "Running tests (attempt $attempt) for destination: $TEST_DESTINATION"
+  if [[ "$TEST_TIMEOUTS_ENABLED" == "YES" ]]; then
+    echo "Test timeouts enabled (default=${DEFAULT_TEST_EXECUTION_TIMEOUT}s, max=${MAX_TEST_EXECUTION_TIMEOUT}s)."
+  else
+    echo "Test timeouts disabled via TEST_TIMEOUTS_ENABLED=NO."
+  fi
 
   set +e
   xcodebuild \
@@ -86,6 +110,8 @@ run_tests_once() {
     -configuration "$TEST_CONFIGURATION" \
     -derivedDataPath "$DERIVED" \
     -destination "$TEST_DESTINATION" \
+    -resultBundlePath "$result_bundle" \
+    "${timeout_args[@]}" \
     test 2>&1 | tee "$log_file"
   local test_exit_code=${pipestatus[1]}
   set -e
@@ -146,7 +172,7 @@ fi
 
 APP_PATH="$ARCHIVE_APP_PATH"
 
-HELPER_PATH="$ARCHIVE_APP_PATH/Contents/Resources/ControlPowerHelper"
+HELPER_PATH="$ARCHIVE_APP_PATH/Contents/MacOS/ControlPowerHelper"
 if [[ ! -f "$HELPER_PATH" ]]; then
   echo "Missing helper binary at $HELPER_PATH"
   exit 1
@@ -210,10 +236,12 @@ cp -R "$APP_PATH" "$DMGROOT/$APP_NAME.app"
 ln -sf /Applications "$DMGROOT/Applications"
 
 hdiutil create -volname "$APP_NAME" -srcfolder "$DMGROOT" -ov -format UDZO "$DMG_PATH"
+echo "DMG created: $DMG_PATH"
 
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
   NOTARY_SUBMIT_JSON="$ARCHIVES/notary-submit.json"
   NOTARY_LOG_JSON="$ARCHIVES/notary-log.json"
+  echo "Submitting DMG for notarization with profile '$NOTARY_PROFILE' (this can take several minutes)..."
   xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait --output-format json > "$NOTARY_SUBMIT_JSON"
 
   NOTARY_ID="$(/usr/bin/python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("id") or d.get("jobId") or d.get("submissionId") or "")' "$NOTARY_SUBMIT_JSON")"

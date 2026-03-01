@@ -118,7 +118,7 @@ check_entitlements() {
 
 check_entitlements "$app_path" "release app"
 
-helper_path="$app_path/Contents/Resources/ControlPowerHelper"
+helper_path="$app_path/Contents/MacOS/ControlPowerHelper"
 if [[ ! -f "$helper_path" ]]; then
   echo "FAIL: embedded helper missing at $helper_path" >&2
   exit 1

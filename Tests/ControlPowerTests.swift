@@ -171,6 +171,22 @@ nonisolated final class ControlPowerTests: XCTestCase {
     }
 
     @MainActor
+    func testEnablingLowBatteryProtectionImmediatelyEnforcesSafety() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+        viewModel.snapshot = PMSetSnapshot(disableSleep: true, lidWake: true, summary: "awake")
+        viewModel.batteryLevel = 15
+        viewModel.isLowBatteryProtectionEnabled = false
+
+        viewModel.isLowBatteryProtectionEnabled = true
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+
+        XCTAssertEqual(client.setDisableSleepCallCount, 1)
+        XCTAssertEqual(client.lastDisableSleepValue, false)
+    }
+
+    @MainActor
     func testLowBatteryProtectionDefaultsEnabledInTestEnvironment() async {
         let client = FakePowerDaemonClient()
         let viewModel = AppViewModel(client: client, isTestEnvironment: true)
@@ -554,7 +570,7 @@ nonisolated final class ControlPowerTests: XCTestCase {
         await client.waitForIdleMutations()
 
         XCTAssertEqual(client.lastDisableSleepValue, false)
-        XCTAssertNil(viewModel.remainingSeconds)
+        XCTAssertFalse(viewModel.isTimerActive)
     }
 
     @MainActor
@@ -583,6 +599,7 @@ nonisolated final class ControlPowerTests: XCTestCase {
         viewModel.startTimer(minutes: 30)
         await client.waitForMutationCallCount(1)
         await client.waitForIdleMutations()
+        await waitForCondition { viewModel.lastError != nil }
 
         XCTAssertFalse(viewModel.isTimerActive)
         XCTAssertNil(viewModel.activeTimerEndDate)
@@ -590,6 +607,18 @@ nonisolated final class ControlPowerTests: XCTestCase {
             viewModel.lastError,
             "Start timer failed: set disable sleep failed"
         )
+    }
+
+    @MainActor
+    func testStartTimerWhenAlreadyAwakeSetsDesiredNoSleep() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+        viewModel.snapshot = PMSetSnapshot(disableSleep: true, lidWake: true, summary: "awake")
+
+        viewModel.startTimer(minutes: 30)
+
+        XCTAssertTrue(viewModel.isTimerActive)
+        XCTAssertTrue(viewModel.desiredNoSleep)
     }
 
     func testTimedProcessRunnerReturnsOutputForSuccess() {
@@ -728,13 +757,14 @@ nonisolated final class ControlPowerTests: XCTestCase {
         XCTAssertFalse(policy.allowsConnection(effectiveUserIdentifier: 501))
     }
 
-    func testHelperConnectionAuthorizationPolicyRequiresConsoleUserIdentifier() {
+    func testHelperConnectionAuthorizationPolicyAllowsNonRootWhenConsoleUserIdentifierUnavailable() {
         let policy = HelperConnectionAuthorizationPolicy(
             hasSigningRequirement: true,
             consoleUserIdentifier: nil
         )
 
-        XCTAssertFalse(policy.allowsConnection(effectiveUserIdentifier: 501))
+        XCTAssertTrue(policy.allowsConnection(effectiveUserIdentifier: 501))
+        XCTAssertFalse(policy.allowsConnection(effectiveUserIdentifier: 0))
     }
 
     func testHelperConnectionAuthorizationPolicyRequiresEffectiveUserMatch() {
@@ -987,7 +1017,7 @@ nonisolated final class ControlPowerTests: XCTestCase {
         await client.waitForIdleMutations()
 
         XCTAssertEqual(viewModel.selectedDurationMinutes, 0)
-        XCTAssertNil(viewModel.remainingSeconds)
+        XCTAssertFalse(viewModel.isTimerActive)
         XCTAssertEqual(client.lastDisableSleepValue, false)
     }
 
@@ -1234,6 +1264,29 @@ nonisolated final class ControlPowerTests: XCTestCase {
 
         XCTAssertEqual(client.setDisableSleepCallCount, setCountBeforeWake)
         XCTAssertEqual(client.fetchStatusCallCount, fetchCountBeforeWake + 1)
+    }
+
+    @MainActor
+    func testWakeReappliesWhenSnapshotUnknownAfterRefreshFailure() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+        viewModel.isLowBatteryProtectionEnabled = false
+        viewModel.setDisableSleepEnabled(true)
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+
+        client.fetchStatusResult = .failure(
+            NSError(domain: "Test", code: 77, userInfo: [NSLocalizedDescriptionKey: "fetch failed"])
+        )
+        viewModel.snapshot = PMSetSnapshot(disableSleep: nil, lidWake: true, summary: "unknown")
+
+        let mutationCountBeforeWake = client.setDisableSleepCallCount
+        await viewModel.handleSystemWake()
+        await client.waitForMutationCallCount(mutationCountBeforeWake + 1)
+        await client.waitForIdleMutations()
+
+        XCTAssertEqual(client.setDisableSleepCallCount, mutationCountBeforeWake + 1)
+        XCTAssertEqual(client.lastDisableSleepValue, true)
     }
 
     @MainActor

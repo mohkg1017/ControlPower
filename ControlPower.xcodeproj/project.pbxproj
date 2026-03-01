@@ -21,11 +21,11 @@
 		401E5B32E9CBD4F2F949053D /* ControlPowerCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = C3F9E37062B3EB7E2781BB7D /* ControlPowerCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		424B16826D8330C607025F15 /* MutationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 199A04101523509B5F605332 /* MutationScheduler.swift */; };
 		469A3196AD1EC117750F14B8 /* TimedProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA70449A591DF349FFFB343E /* TimedProcessRunner.swift */; };
+		479936EB154A5BFB2EEE2083 /* com.moe.controlpower.helper.v2.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = 6AC6FA81C873A81ABF945D4E /* com.moe.controlpower.helper.v2.plist */; };
 		4B2ED42888E360822606E00C /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E581B73090FE7376C524BC66 /* AppViewModel.swift */; };
 		51E5294CF73A2D28D0847770 /* ControlPowerCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3F9E37062B3EB7E2781BB7D /* ControlPowerCore.framework */; };
 		5324BA70CD33FC41BD263AF1 /* ServiceManagement.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9EFEC6DE9BE3E22C6BA72568 /* ServiceManagement.framework */; };
 		6387755A1C22EE60CE7C933C /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 644188FD8F3C5299A32FFC2C /* AppIntents.framework */; };
-		6F47554028CD76DF960DDF6D /* com.moe.controlpower.helper.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = A226D81853A36A42D4BE4192 /* com.moe.controlpower.helper.plist */; };
 		762B94CF67F8DBF1DCA6F575 /* PowerDaemonClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C409F0548AC1CBA6D54AFCA /* PowerDaemonClient.swift */; };
 		7647FC586286362E2DC44972 /* MutationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 199A04101523509B5F605332 /* MutationScheduler.swift */; };
 		7EA6999510CC3E4FB2EA1037 /* ControlPowerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F841A72B3332FF60B3550DA /* ControlPowerApp.swift */; };
@@ -95,7 +95,7 @@
 			dstPath = Contents/Library/LaunchDaemons;
 			dstSubfolderSpec = 1;
 			files = (
-				6F47554028CD76DF960DDF6D /* com.moe.controlpower.helper.plist in CopyFiles */,
+				479936EB154A5BFB2EEE2083 /* com.moe.controlpower.helper.v2.plist in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -111,6 +111,7 @@
 		4978AFBAC23984886014DA6B /* ControlPowerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ControlPowerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		50DBDA897E9CEE1875012C32 /* ErrorSanitizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorSanitizer.swift; sourceTree = "<group>"; };
 		644188FD8F3C5299A32FFC2C /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
+		6AC6FA81C873A81ABF945D4E /* com.moe.controlpower.helper.v2.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = com.moe.controlpower.helper.v2.plist; sourceTree = "<group>"; };
 		6C409F0548AC1CBA6D54AFCA /* PowerDaemonClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerDaemonClient.swift; sourceTree = "<group>"; };
 		7A9685F3170D8BDA92CEF69F /* PowerHelperXPCProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerHelperXPCProtocol.swift; sourceTree = "<group>"; };
 		7F534132BEC0146A3D375F2B /* MenuBarPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPanelView.swift; sourceTree = "<group>"; };
@@ -121,7 +122,6 @@
 		9B19193CDBB8FE4FC08D737A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		9B75491BA4E87B9ABDEB4153 /* ControlPowerSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPowerSettingsView.swift; sourceTree = "<group>"; };
 		9EFEC6DE9BE3E22C6BA72568 /* ServiceManagement.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ServiceManagement.framework; path = System/Library/Frameworks/ServiceManagement.framework; sourceTree = SDKROOT; };
-		A226D81853A36A42D4BE4192 /* com.moe.controlpower.helper.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = com.moe.controlpower.helper.plist; sourceTree = "<group>"; };
 		C3F9E37062B3EB7E2781BB7D /* ControlPowerCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = ControlPowerCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA70449A591DF349FFFB343E /* TimedProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimedProcessRunner.swift; sourceTree = "<group>"; };
 		E581B73090FE7376C524BC66 /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
@@ -247,7 +247,7 @@
 		F761F4E3D4C7274E412F28AE /* LaunchDaemons */ = {
 			isa = PBXGroup;
 			children = (
-				A226D81853A36A42D4BE4192 /* com.moe.controlpower.helper.plist */,
+				6AC6FA81C873A81ABF945D4E /* com.moe.controlpower.helper.v2.plist */,
 			);
 			path = LaunchDaemons;
 			sourceTree = "<group>";
@@ -420,11 +420,11 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ControlPowerHelper",
+				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_FOLDER_PATH)/ControlPowerHelper",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\nhelper=\"${SCRIPT_INPUT_FILE_0:-}\"\nif [[ -z \"$helper\" || ! -r \"$helper\" ]]; then\n  helper=\"${SCRIPT_INPUT_FILE_1:-}\"\nfi\ndestination=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/ControlPowerHelper\"\nif [[ -z \"$helper\" || ! -r \"$helper\" ]]; then\n  echo \"error: missing readable helper binary from script inputs\"\n  exit 1\nfi\n/usr/bin/install -m 755 \"$helper\" \"$destination\"\n";
+			shellScript = "set -euo pipefail\nhelper=\"${SCRIPT_INPUT_FILE_0:-}\"\nif [[ -z \"$helper\" || ! -r \"$helper\" ]]; then\n  helper=\"${SCRIPT_INPUT_FILE_1:-}\"\nfi\ndestination=\"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/ControlPowerHelper\"\nif [[ -z \"$helper\" || ! -r \"$helper\" ]]; then\n  echo \"error: missing readable helper binary from script inputs\"\n  exit 1\nfi\n/usr/bin/install -m 755 \"$helper\" \"$destination\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

@@ -46,7 +46,7 @@ struct ControlPowerApp: App {
                 .keyboardShortcut("r", modifiers: .command)
                 .disabled(viewModel.isBusy)
 
-                Button((viewModel.snapshot.disableSleep ?? false) ? "Disable Keep Awake" : "Enable Keep Awake") {
+                Button(viewModel.disableSleepDisplayValue ? "Disable Keep Awake" : "Enable Keep Awake") {
                     viewModel.toggleDisableSleep()
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])

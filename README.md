@@ -121,8 +121,8 @@ It does not auto-upgrade binaries; it only points Xcode to whatever local `codex
 
 ## Notes
 
-- LaunchDaemon plist is bundled at `Contents/Library/LaunchDaemons/com.moe.controlpower.helper.plist`.
-- Helper binary is embedded at `Contents/Resources/ControlPowerHelper` and exposed via Mach service `com.moe.controlpower.helper.mach`.
+- LaunchDaemon plist is bundled at `Contents/Library/LaunchDaemons/com.moe.controlpower.helper.v2.plist`.
+- Helper binary is embedded at `Contents/MacOS/ControlPowerHelper` and exposed via Mach service `com.moe.controlpower.helper.v2.mach`.
 - Helper starts on demand via Mach service instead of being forced to run continuously.
 - Use the `ControlPowerProfiling` scheme or `-configuration Profiling` for Instruments captures with hardened runtime profiling entitlements.
 - Verify release entitlements before distribution:

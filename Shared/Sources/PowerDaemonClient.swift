@@ -110,6 +110,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     nonisolated private static let registrationProbeTimeoutSeconds: TimeInterval = 3
     nonisolated private static let localSnapshotCacheTTLSeconds: TimeInterval = 5
     nonisolated private static let helperTrustCacheTTLSeconds: TimeInterval = 30
+    nonisolated private static let legacyDaemonPlistNames = ["com.moe.controlpower.helper.plist"]
     nonisolated private static let pmsetValidationError = SystemExecutableValidator.validateExecutable(at: pmsetURL)
     nonisolated private static let launchctlValidationError = SystemExecutableValidator.validateLaunchctlExecutable(at: launchctlURL)
     nonisolated private static let localSnapshotCache = Mutex(LocalPMSetSnapshotCacheState(snapshot: nil, fetchedAt: nil))
@@ -142,6 +143,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     public func registerDaemonIfNeeded() async throws {
+        try await unregisterLegacyDaemons()
         try await runDetachedUtilityOperation {
             let service = SMAppService.daemon(plistName: PowerHelperConstants.daemonPlistName)
             switch service.status {
@@ -166,6 +168,9 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     public func setHelperEnabled(_ enabled: Bool) async throws {
+        if enabled {
+            try await unregisterLegacyDaemons()
+        }
         try await runDetachedUtilityOperation {
             let service = SMAppService.daemon(plistName: PowerHelperConstants.daemonPlistName)
             if enabled {
@@ -181,11 +186,14 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     public func isDaemonBroken() async -> Bool {
         let service = daemonService
         guard service.status == .enabled else { return false }
-        guard let diagnostics = await Self.fetchHelperLaunchDiagnostics() else { return false }
+        guard let result = await Self.launchctlDaemonPrintResult() else { return false }
+        guard result.success else { return true }
+        let diagnostics = Self.helperLaunchDiagnostics(fromLaunchctlOutput: result.output)
         return diagnostics.spawnFailed || diagnostics.launchConstraintViolation
     }
 
     public func repairDaemon() async throws {
+        try await unregisterLegacyDaemons()
         if let bootoutResult = await bootoutDaemon(), !Self.isIgnorableBootoutFailure(bootoutResult) {
             let description = bootoutResult.timedOut
                 ? "launchctl bootout timed out while repairing the helper daemon"
@@ -502,6 +510,8 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             || normalizedDescription.contains("not found")
             || normalizedDescription.contains("unknown service")
             || normalizedDescription.contains("could not find service")
+            || normalizedDescription.contains("operation not permitted")
+            || normalizedDescription.contains("invalid argument")
     }
 
     nonisolated private static func validateHelperTrust(preferBundleHelperPath: Bool = false) throws {
@@ -592,7 +602,7 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
     }
 
     nonisolated private static func bundleHelperExecutableURL() -> URL? {
-        let bundleHelperURL = Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/ControlPowerHelper")
+        let bundleHelperURL = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/ControlPowerHelper")
         guard FileManager.default.isExecutableFile(atPath: bundleHelperURL.path) else {
             return nil
         }
@@ -759,8 +769,28 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
 
     private func performWrite(_ writeOperation: @escaping () async throws -> Void) async throws {
         try await ensureHelperReadyForWrites()
-        try await writeOperation()
+        do {
+            try await writeOperation()
+        } catch {
+            guard Self.shouldRetryAfterTransportFailure(error) else {
+                throw error
+            }
+            try await repairDaemon()
+            try await writeOperation()
+        }
         Self.clearLocalSnapshotCache()
+    }
+
+    nonisolated private static func shouldRetryAfterTransportFailure(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == "ControlPower.Helper", [5, 6, 7, 10].contains(nsError.code) {
+            return true
+        }
+
+        let normalized = error.controlPowerSanitizedDescription.lowercased()
+        return normalized.contains("connection invalidated")
+            || normalized.contains("connection interrupted")
+            || normalized.contains("did not issue a request token")
     }
 
     private func runDetachedUtilityOperation(_ operation: @escaping @Sendable () throws -> Void) async throws {
@@ -771,6 +801,20 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             try await task.value
         } onCancel: {
             task.cancel()
+        }
+    }
+
+    private func unregisterLegacyDaemons() async throws {
+        try await runDetachedUtilityOperation {
+            for plistName in Self.legacyDaemonPlistNames {
+                do {
+                    try SMAppService.daemon(plistName: plistName).unregister()
+                } catch {
+                    if !Self.isIgnorableUnregisterFailureDescription(error.controlPowerSanitizedDescription) {
+                        throw error
+                    }
+                }
+            }
         }
     }
 

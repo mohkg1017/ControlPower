@@ -38,7 +38,7 @@ struct ControlPowerSettingsView: View {
 
     private var helperEnabledBinding: Binding<Bool> {
         Binding(
-            get: { viewModel.isHelperEnabled },
+            get: { viewModel.helperEnabledDisplayValue },
             set: { viewModel.setHelperEnabled($0) }
         )
     }

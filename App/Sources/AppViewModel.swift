@@ -104,7 +104,6 @@ public final class AppViewModel {
     public var lastError: String?
     public var helperNeedsRepair = false
 
-    public var remainingSeconds: Int?
     public var selectedDurationMinutes: Int = 60
     @ObservationIgnored
     private var timerTask: Task<Void, Never>?
@@ -117,11 +116,13 @@ public final class AppViewModel {
     private var timerEndDate: Date?
 
     public var batteryLevel: Int = 100
-    private var isOnBatteryPower = true
+    private var isOnBatteryPower = false
     public var isLowBatteryProtectionEnabled: Bool = true {
         didSet {
-            guard shouldPersistLowBatteryProtection else { return }
-            UserDefaults.standard.set(isLowBatteryProtectionEnabled, forKey: Self.lowBatteryProtectionKey)
+            if shouldPersistLowBatteryProtection {
+                UserDefaults.standard.set(isLowBatteryProtectionEnabled, forKey: Self.lowBatteryProtectionKey)
+            }
+            checkBatterySafety()
         }
     }
     @ObservationIgnored public private(set) var desiredNoSleep: Bool = false
@@ -141,8 +142,8 @@ public final class AppViewModel {
     private let shouldPersistDesiredNoSleep: Bool
     @ObservationIgnored
     private var lowBatteryAutoDisableQueued = false
-    @ObservationIgnored
     private var pendingHelperEnabledRequest: Bool?
+    private var pendingDisableSleepRequest: Bool?
     @ObservationIgnored
     private var wakeReapplyInFlight = false
     @ObservationIgnored
@@ -211,7 +212,7 @@ public final class AppViewModel {
     }
 
     public var isReapplyingNoSleep: Bool {
-        desiredNoSleep && snapshot.disableSleep == false && !helperNeedsRepair
+        desiredNoSleep && snapshot.disableSleep != true && !helperNeedsRepair
     }
 
     public var statusIconName: String {
@@ -407,7 +408,7 @@ public final class AppViewModel {
     }
 
     public func toggleDisableSleep() {
-        setDisableSleepEnabled(!(snapshot.disableSleep ?? false))
+        setDisableSleepEnabled(!disableSleepDisplayValue)
     }
 
     public func setDisableSleepEnabled(_ enabled: Bool) {
@@ -426,6 +427,7 @@ public final class AppViewModel {
 
         let requestIdentifier = timerRequestIdentifier
         if snapshot.disableSleep == true {
+            updateDesiredNoSleep(true)
             activateTimer(minutes: normalizedMinutes, requestIdentifier: requestIdentifier)
             return
         }
@@ -445,7 +447,6 @@ public final class AppViewModel {
         timerTask?.cancel()
         timerTask = nil
         timerEndDate = nil
-        remainingSeconds = nil
     }
 
     public func sleepDisplay() {
@@ -485,6 +486,20 @@ public final class AppViewModel {
         case .disabled:
             return "Disabled"
         }
+    }
+
+    public var disableSleepDisplayValue: Bool {
+        if let pendingDisableSleepRequest {
+            return pendingDisableSleepRequest
+        }
+        if isReapplyingNoSleep {
+            return true
+        }
+        return snapshot.disableSleep ?? false
+    }
+
+    public var helperEnabledDisplayValue: Bool {
+        pendingHelperEnabledRequest ?? isHelperEnabled
     }
 
     public var isTimerActive: Bool {
@@ -630,14 +645,12 @@ public final class AppViewModel {
     private func finishTimerIfNeeded() {
         timerTask = nil
         timerEndDate = nil
-        remainingSeconds = nil
         setDisableSleep(false, forceWrite: true)
     }
 
     private func activateTimer(minutes: Int, requestIdentifier: Int) {
         guard timerRequestIdentifier == requestIdentifier else { return }
 
-        remainingSeconds = minutes * 60
         timerEndDate = Date().addingTimeInterval(TimeInterval(minutes * 60))
         timerTask = Task { @MainActor [weak self] in
             while let self, let timerEndDate = self.timerEndDate {
@@ -670,21 +683,29 @@ public final class AppViewModel {
     }
 
     private func setDisableSleep(_ enabled: Bool, forceWrite: Bool = false) {
+        let target = enabled
+        pendingDisableSleepRequest = target
         updateDesiredNoSleep(enabled)
-        if !forceWrite, let currentValue = snapshot.disableSleep, currentValue == enabled {
+        if !forceWrite, let currentValue = snapshot.disableSleep, currentValue == target {
+            if pendingDisableSleepRequest == target {
+                pendingDisableSleepRequest = nil
+            }
             return
         }
-        if !enabled {
+        if !target {
             cancelTimer()
         }
-        let shouldClearLowBatteryGuard = !enabled
-        enqueueOperation("Set disablesleep to \(enabled ? "1" : "0")", key: "setDisableSleep") { viewModel in
+        let shouldClearLowBatteryGuard = !target
+        enqueueOperation("Set no-sleep mode to \(target ? "on" : "off")", key: "setDisableSleep") { viewModel in
             defer {
+                if viewModel.pendingDisableSleepRequest == target {
+                    viewModel.pendingDisableSleepRequest = nil
+                }
                 if shouldClearLowBatteryGuard {
                     viewModel.lowBatteryAutoDisableQueued = false
                 }
             }
-            try await viewModel.client.setDisableSleep(enabled)
+            try await viewModel.client.setDisableSleep(target)
             try await viewModel.refreshSnapshotFromClient()
         }
     }
@@ -692,7 +713,7 @@ public final class AppViewModel {
     private func reapplyDesiredNoSleepIfNeeded() {
         guard desiredNoSleep else { return }
         guard !helperNeedsRepair else { return }
-        guard snapshot.disableSleep == false else { return }
+        guard snapshot.disableSleep != true else { return }
         setDisableSleep(true)
     }
 

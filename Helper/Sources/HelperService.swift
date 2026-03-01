@@ -19,6 +19,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
     private let logger = Logger(subsystem: "com.moe.controlpower.helper", category: "xpc")
     private let pmsetURL = URL(fileURLWithPath: "/usr/bin/pmset")
     private let pmsetTimeoutSeconds: TimeInterval = 8
+    private let fallbackAllowSleepMinutes = "10"
     private let idleTimeoutSeconds: TimeInterval = 120
     private let pmsetValidationError: String? = SystemExecutableValidator.validateExecutable(at: URL(fileURLWithPath: "/usr/bin/pmset"))
     private let operationQueue = DispatchQueue(label: "com.moe.controlpower.helper.pmset", qos: .utility)
@@ -35,19 +36,28 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
         timer.schedule(deadline: .now() + .seconds(Int(idleTimeoutSeconds)), repeating: .seconds(30), leeway: .seconds(10))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            let shouldExit = self.requestActivity.withLock { state in
-                guard !state.isShuttingDown else {
-                    return false
-                }
+            let shouldAttemptShutdown = self.requestActivity.withLock { state in
                 let idleDuration = Date().timeIntervalSince(state.lastActivity)
-                guard idleDuration >= self.idleTimeoutSeconds, state.inFlightRequestCount == 0 else {
-                    return false
-                }
-                state.isShuttingDown = true
-                return true
+                return !state.isShuttingDown
+                    && idleDuration >= self.idleTimeoutSeconds
+                    && state.inFlightRequestCount == 0
             }
-            if shouldExit {
-                DispatchQueue.main.async {
+
+            guard shouldAttemptShutdown else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let shouldExit = self.requestActivity.withLock { state in
+                    guard !state.isShuttingDown else {
+                        return false
+                    }
+                    let idleDuration = Date().timeIntervalSince(state.lastActivity)
+                    guard idleDuration >= self.idleTimeoutSeconds, state.inFlightRequestCount == 0 else {
+                        return false
+                    }
+                    state.isShuttingDown = true
+                    return true
+                }
+                if shouldExit {
                     CFRunLoopStop(CFRunLoopGetMain())
                 }
             }
@@ -60,10 +70,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
     }
 
     nonisolated func issueSessionToken(_ reply: @escaping (String) -> Void) {
-        guard beginRequest() else {
-            reply("")
-            return
-        }
+        beginRequest()
         defer { endRequest() }
         guard let context = currentConnectionContext() else {
             reply("")
@@ -76,10 +83,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
     }
 
     nonisolated func ping(_ token: String, _ reply: @escaping (String) -> Void) {
-        guard beginRequest() else {
-            reply("unavailable")
-            return
-        }
+        beginRequest()
         defer { endRequest() }
         guard validateSessionToken(token, action: "ping") else {
             reply("unauthorized")
@@ -89,10 +93,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
     }
 
     nonisolated func fetchStatus(_ token: String, _ reply: @escaping @Sendable (Bool, Int, Int, String, String) -> Void) {
-        guard beginRequest() else {
-            reply(false, -1, -1, "", "Helper is shutting down")
-            return
-        }
+        beginRequest()
         guard let context = currentConnectionContext() else {
             endRequest()
             reply(false, -1, -1, "", "Missing connection context")
@@ -128,10 +129,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
     }
 
     nonisolated func setDisableSleep(_ enabled: Bool, token: String, _ reply: @escaping @Sendable (Bool, String) -> Void) {
-        guard beginRequest() else {
-            reply(false, "Helper is shutting down")
-            return
-        }
+        beginRequest()
         guard let context = currentConnectionContext() else {
             endRequest()
             reply(false, "Missing connection context")
@@ -149,16 +147,13 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
                 reply(false, "Client connection closed before request execution")
                 return
             }
-            let result = self.runPMSet(arguments: ["-a", "disablesleep", enabled ? "1" : "0"])
+            let result = self.runSetDisableSleepCommand(enabled: enabled)
             reply(result.success, result.output)
         }
     }
 
     nonisolated func restoreDefaults(_ token: String, _ reply: @escaping @Sendable (Bool, String) -> Void) {
-        guard beginRequest() else {
-            reply(false, "Helper is shutting down")
-            return
-        }
+        beginRequest()
         guard let context = currentConnectionContext() else {
             endRequest()
             reply(false, "Missing connection context")
@@ -176,9 +171,15 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
                 reply(false, "Client connection closed before request execution")
                 return
             }
-            let disableResult = self.runPMSet(arguments: ["-a", "disablesleep", "0"])
+            let disableResult = self.runSetDisableSleepCommand(enabled: false)
             guard disableResult.success else {
                 reply(false, disableResult.output)
+                return
+            }
+
+            let clearFlagResult = self.runPMSet(arguments: ["-a", "disablesleep", "0"])
+            guard clearFlagResult.success else {
+                reply(false, clearFlagResult.output)
                 return
             }
 
@@ -196,14 +197,14 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
         _ = activeConnectionIdentifiers.withLock { $0.insert(connectionIdentifier) }
     }
 
-    nonisolated private func beginRequest() -> Bool {
+    nonisolated private func beginRequest() {
         requestActivity.withLock { state in
-            guard !state.isShuttingDown else {
-                return false
+            if state.isShuttingDown {
+                // A new XPC request means the helper is needed again; cancel pending idle shutdown.
+                state.isShuttingDown = false
             }
             state.inFlightRequestCount += 1
             state.lastActivity = Date()
-            return true
         }
     }
 
@@ -251,7 +252,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
 
     nonisolated private func isAuthorizedConsoleUser(_ effectiveUserIdentifier: uid_t) -> Bool {
         guard let consoleUserIdentifier = currentConsoleUserIdentifier() else {
-            return false
+            return effectiveUserIdentifier != 0
         }
         return effectiveUserIdentifier == consoleUserIdentifier
     }
@@ -283,6 +284,27 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
             return (false, "pmset command timed out after \(Int(pmsetTimeoutSeconds)) seconds")
         }
         return (result.success, result.output)
+    }
+
+    nonisolated private func runSetDisableSleepCommand(enabled: Bool) -> (success: Bool, output: String) {
+        let sleepTimerValue = enabled ? "0" : fallbackAllowSleepMinutes
+        let primaryResult = runPMSet(arguments: ["-a", "sleep", sleepTimerValue])
+        guard !primaryResult.success else {
+            return primaryResult
+        }
+
+        let fallbackDisableValue = enabled ? "1" : "0"
+        let fallbackResult = runPMSet(arguments: ["-a", "disablesleep", fallbackDisableValue])
+        guard !fallbackResult.output.isEmpty else {
+            return fallbackResult
+        }
+        guard !primaryResult.output.isEmpty else {
+            return fallbackResult
+        }
+        return (
+            fallbackResult.success,
+            "\(primaryResult.output)\nFallback (pmset -a disablesleep \(fallbackDisableValue)): \(fallbackResult.output)"
+        )
     }
 
 }

@@ -52,6 +52,11 @@ struct MenuBarPanelView: View {
     private var statusAndActions: some View {
         VStack(spacing: 16) {
             powerStatusRow
+
+            if let timerEndDate = viewModel.activeTimerEndDate {
+                timerRow(endDate: timerEndDate)
+            }
+
             sleepDisplayRow
 
             if viewModel.requiresHelperApproval {
@@ -163,9 +168,52 @@ struct MenuBarPanelView: View {
         }
     }
 
+    private func timerRow(endDate: Date) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.orange.opacity(0.1))
+                    .frame(width: 44, height: 44)
+
+                Image(systemName: "timer")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(.orange)
+            }
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Keep Awake Timer")
+                    .font(.system(.body, weight: .semibold))
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    if let remaining = AppViewModel.remainingTimeString(until: endDate, now: context.date) {
+                        Text(remaining)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.orange)
+                    } else {
+                        Text("Expiring…")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Spacer()
+
+            Button {
+                viewModel.cancelTimer()
+            } label: {
+                Text("Cancel")
+                    .font(.caption.bold())
+            }
+            .buttonStyle(.bordered)
+            .tint(.orange)
+            .controlSize(.small)
+        }
+    }
+
     private var disableSleepBinding: Binding<Bool> {
         Binding(
-            get: { viewModel.snapshot.disableSleep ?? false },
+            get: { viewModel.disableSleepDisplayValue },
             set: { viewModel.setDisableSleepEnabled($0) }
         )
     }
