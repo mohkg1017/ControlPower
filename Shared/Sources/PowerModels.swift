@@ -142,8 +142,12 @@ public enum PMSetParser {
             return nil
         }
 
-        let valueSlice = trimmed.dropFirst(key.count).drop(while: \.isWhitespace)
-        guard let value = valueSlice.first else {
+        let valueSlice = trimmed.dropFirst(key.count)
+        guard valueSlice.first?.isWhitespace == true else {
+            return nil
+        }
+        let normalizedValueSlice = valueSlice.drop(while: \.isWhitespace)
+        guard let value = normalizedValueSlice.first else {
             return nil
         }
 
@@ -158,12 +162,16 @@ public enum PMSetParser {
             return nil
         }
 
-        let valueSlice = trimmed.dropFirst(key.count).drop(while: \.isWhitespace)
-        guard !valueSlice.isEmpty else {
+        let valueSlice = trimmed.dropFirst(key.count)
+        guard valueSlice.first?.isWhitespace == true else {
+            return nil
+        }
+        let normalizedValueSlice = valueSlice.drop(while: \.isWhitespace)
+        guard !normalizedValueSlice.isEmpty else {
             return nil
         }
 
-        let integerChars = valueSlice.prefix { $0.isNumber || $0 == "-" }
+        let integerChars = normalizedValueSlice.prefix { $0.isNumber || $0 == "-" }
         guard !integerChars.isEmpty else {
             return nil
         }

@@ -177,12 +177,6 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
                 return
             }
 
-            let clearFlagResult = self.runPMSet(arguments: ["-a", "disablesleep", "0"])
-            guard clearFlagResult.success else {
-                reply(false, clearFlagResult.output)
-                return
-            }
-
             let lidResult = self.runPMSet(arguments: ["-a", "lidwake", "1"])
             reply(lidResult.success, lidResult.output)
         }
@@ -295,8 +289,14 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
 
         let sleepTimerValue = enabled ? "0" : fallbackAllowSleepMinutes
         let fallbackResult = runPMSet(arguments: ["-a", "sleep", sleepTimerValue])
-        guard !fallbackResult.output.isEmpty else {
+        guard !fallbackResult.success else {
             return fallbackResult
+        }
+        guard !fallbackResult.output.isEmpty else {
+            if primaryResult.output.isEmpty {
+                return (false, "pmset command failed")
+            }
+            return (false, primaryResult.output)
         }
         guard !primaryResult.output.isEmpty else {
             return fallbackResult
