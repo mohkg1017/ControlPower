@@ -33,20 +33,24 @@ struct MainView: View {
             ZStack {
                 TahoeBackgroundView(showAnimatedMesh: selectedTab == .overview)
 
-                switch selectedTab {
-                case .overview:
-                    OverviewTabView(viewModel: viewModel)
-                case .settings:
-                    ControlPowerSettingsView(viewModel: viewModel)
-                        .scrollContentBackground(.hidden)
-                        .navigationTitle("Settings")
-                case .advanced:
-                    AdvancedStatusTabView(viewModel: viewModel)
-                case .about:
-                    AboutTabView()
+                Group {
+                    switch selectedTab {
+                    case .overview:
+                        OverviewTabView(viewModel: viewModel)
+                    case .settings:
+                        ControlPowerSettingsView(viewModel: viewModel)
+                            .scrollContentBackground(.hidden)
+                            .navigationTitle("Settings")
+                    case .advanced:
+                        AdvancedStatusTabView(viewModel: viewModel)
+                    case .about:
+                        AboutTabView()
+                    }
                 }
+                .id(selectedTab)
+                .transition(.opacity)
             }
-            .transition(.opacity)
+            .animation(.easeInOut(duration: 0.2), value: selectedTab)
         }
     }
 
@@ -479,7 +483,10 @@ private struct AnimatedTahoeBackground: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
-            isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
+            let isLowPowerModeEnabledNow = ProcessInfo.processInfo.isLowPowerModeEnabled
+            if isLowPowerModeEnabled != isLowPowerModeEnabledNow {
+                isLowPowerModeEnabled = isLowPowerModeEnabledNow
+            }
         }
     }
 }

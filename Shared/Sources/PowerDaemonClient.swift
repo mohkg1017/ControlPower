@@ -613,10 +613,11 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
 
-            if let path = value(forKey: "path", inLaunchctlLine: trimmed) {
+            if let path = value(forKey: "program", inLaunchctlLine: trimmed) {
                 return path
             }
-            if let path = value(forKey: "program", inLaunchctlLine: trimmed) {
+            if let path = value(forKey: "path", inLaunchctlLine: trimmed),
+               !path.hasSuffix(".plist") {
                 return path
             }
         }

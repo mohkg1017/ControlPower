@@ -282,29 +282,19 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
 
     nonisolated private func runSetDisableSleepCommand(enabled: Bool) -> (success: Bool, output: String) {
         let disableSleepValue = enabled ? "1" : "0"
-        let primaryResult = runPMSet(arguments: ["-a", "disablesleep", disableSleepValue])
-        guard !primaryResult.success else {
-            return primaryResult
-        }
-
         let sleepTimerValue = enabled ? "0" : fallbackAllowSleepMinutes
-        let fallbackResult = runPMSet(arguments: ["-a", "sleep", sleepTimerValue])
-        guard !fallbackResult.success else {
-            return fallbackResult
+
+        let flagResult = runPMSet(arguments: ["-a", "disablesleep", disableSleepValue])
+        let timerResult = runPMSet(arguments: ["-a", "sleep", sleepTimerValue])
+
+        let combinedOutput = [flagResult.output, timerResult.output]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+
+        if flagResult.success || timerResult.success {
+            return (true, combinedOutput)
         }
-        guard !fallbackResult.output.isEmpty else {
-            if primaryResult.output.isEmpty {
-                return (false, "pmset command failed")
-            }
-            return (false, primaryResult.output)
-        }
-        guard !primaryResult.output.isEmpty else {
-            return fallbackResult
-        }
-        return (
-            fallbackResult.success,
-            "\(primaryResult.output)\nFallback (pmset -a sleep \(sleepTimerValue)): \(fallbackResult.output)"
-        )
+        return (false, combinedOutput.isEmpty ? "pmset command failed" : combinedOutput)
     }
 
 }
