@@ -510,7 +510,6 @@ public struct PowerDaemonClient: PowerDaemonClientProtocol {
             || normalizedDescription.contains("not found")
             || normalizedDescription.contains("unknown service")
             || normalizedDescription.contains("could not find service")
-            || normalizedDescription.contains("operation not permitted")
             || normalizedDescription.contains("invalid argument")
     }
 

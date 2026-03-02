@@ -172,6 +172,7 @@ public final class AppViewModel {
         self.client = clientOperations
         self.mutationScheduler = MutationScheduler(maxPendingMutations: Self.maxPendingMutations)
         self.isTestEnvironment = isTestEnvironment
+        self.isOnBatteryPower = isTestEnvironment
         self.shouldPersistLowBatteryProtection = !isTestEnvironment
         self.shouldPersistDesiredNoSleep = !isTestEnvironment && !Self.isRunningTests
         self.isLowBatteryProtectionEnabled = isTestEnvironment
@@ -275,10 +276,12 @@ public final class AppViewModel {
     @MainActor
     private func runStartupSequence() async {
         defer { startupTask = nil }
+        var didRegisterFail = false
 
         do {
             try await client.registerDaemonIfNeeded()
         } catch {
+            didRegisterFail = true
             lastError = error.controlPowerSanitizedDescription
         }
         guard !Task.isCancelled else { return }
@@ -290,7 +293,11 @@ public final class AppViewModel {
         await refreshStatus()
         guard !Task.isCancelled else { return }
 
-        if helperNeedsRepair {
+        let shouldRepairAfterFallback = didRegisterFail && statusSource == .localFallback
+        if helperNeedsRepair || shouldRepairAfterFallback {
+            if shouldRepairAfterFallback {
+                helperNeedsRepair = true
+            }
             await repairDaemon()
             guard !Task.isCancelled else { return }
         }

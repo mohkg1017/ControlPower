@@ -287,14 +287,14 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
     }
 
     nonisolated private func runSetDisableSleepCommand(enabled: Bool) -> (success: Bool, output: String) {
-        let sleepTimerValue = enabled ? "0" : fallbackAllowSleepMinutes
-        let primaryResult = runPMSet(arguments: ["-a", "sleep", sleepTimerValue])
+        let disableSleepValue = enabled ? "1" : "0"
+        let primaryResult = runPMSet(arguments: ["-a", "disablesleep", disableSleepValue])
         guard !primaryResult.success else {
             return primaryResult
         }
 
-        let fallbackDisableValue = enabled ? "1" : "0"
-        let fallbackResult = runPMSet(arguments: ["-a", "disablesleep", fallbackDisableValue])
+        let sleepTimerValue = enabled ? "0" : fallbackAllowSleepMinutes
+        let fallbackResult = runPMSet(arguments: ["-a", "sleep", sleepTimerValue])
         guard !fallbackResult.output.isEmpty else {
             return fallbackResult
         }
@@ -303,7 +303,7 @@ final class HelperService: NSObject, PowerHelperXPCProtocol, @unchecked Sendable
         }
         return (
             fallbackResult.success,
-            "\(primaryResult.output)\nFallback (pmset -a disablesleep \(fallbackDisableValue)): \(fallbackResult.output)"
+            "\(primaryResult.output)\nFallback (pmset -a sleep \(sleepTimerValue)): \(fallbackResult.output)"
         )
     }
 
