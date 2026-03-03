@@ -294,6 +294,38 @@ nonisolated final class ControlPowerTests: XCTestCase {
     }
 
     @MainActor
+    func testSetHelperEnabledReappliesDesiredNoSleepAfterEnable() async {
+        let client = FakePowerDaemonClient()
+        client.daemonStatus = .disabled
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: true, lidWake: true, summary: "before-enable"),
+                source: .helper
+            )
+        )
+
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+        viewModel.setDisableSleepEnabled(true)
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "after-enable"),
+                source: .helper
+            )
+        )
+
+        viewModel.setHelperEnabled(true)
+        await waitForCondition { client.lastDisableSleepValue == true }
+        await client.waitForMutationCallCount(2)
+        await client.waitForIdleMutations()
+
+        XCTAssertEqual(client.setHelperEnabledCallCount, 1)
+        XCTAssertEqual(client.setDisableSleepCallCount, 2)
+        XCTAssertEqual(client.lastDisableSleepValue, true)
+    }
+
+    @MainActor
     func testToggleHelperRefreshFailureSurfacesRefreshErrorAndKeepsStateConsistent() async {
         let client = FakePowerDaemonClient()
         client.fetchStatusResult = .failure(
@@ -619,6 +651,37 @@ nonisolated final class ControlPowerTests: XCTestCase {
 
         XCTAssertTrue(viewModel.isTimerActive)
         XCTAssertTrue(viewModel.desiredNoSleep)
+    }
+
+    @MainActor
+    func testDisablingNoSleepCancelsTimerEvenWhenSnapshotAlreadyOff() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+        viewModel.snapshot = PMSetSnapshot(disableSleep: true, lidWake: true, summary: "awake")
+
+        viewModel.startTimer(minutes: 30)
+        XCTAssertTrue(viewModel.isTimerActive)
+
+        viewModel.snapshot = PMSetSnapshot(disableSleep: false, lidWake: true, summary: "off")
+        viewModel.setDisableSleepEnabled(false)
+
+        XCTAssertFalse(viewModel.isTimerActive)
+        XCTAssertNil(viewModel.activeTimerEndDate)
+        XCTAssertEqual(client.setDisableSleepCallCount, 0)
+    }
+
+    @MainActor
+    func testTimerLoopInTestEnvironmentDoesNotRequireNSApplication() async {
+        let client = FakePowerDaemonClient()
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+        viewModel.snapshot = PMSetSnapshot(disableSleep: true, lidWake: true, summary: "awake")
+
+        viewModel.startTimer(minutes: 1)
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertTrue(viewModel.isTimerActive)
+        viewModel.cancelTimer()
+        XCTAssertFalse(viewModel.isTimerActive)
     }
 
     func testTimedProcessRunnerReturnsOutputForSuccess() {
@@ -1062,6 +1125,37 @@ nonisolated final class ControlPowerTests: XCTestCase {
         XCTAssertEqual(client.fetchStatusCallCount, 1)
         XCTAssertEqual(viewModel.snapshot.summary, "after-repair")
         XCTAssertEqual(viewModel.statusSource, .helper)
+    }
+
+    @MainActor
+    func testRepairDaemonReappliesDesiredNoSleepAfterRecovery() async {
+        let client = FakePowerDaemonClient()
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: true, lidWake: true, summary: "before-repair"),
+                source: .helper
+            )
+        )
+
+        let viewModel = AppViewModel(client: client, isTestEnvironment: true)
+        viewModel.setDisableSleepEnabled(true)
+        await client.waitForMutationCallCount(1)
+        await client.waitForIdleMutations()
+        client.fetchStatusResult = .success(
+            PowerHelperStatus(
+                snapshot: PMSetSnapshot(disableSleep: false, lidWake: true, summary: "after-repair"),
+                source: .helper
+            )
+        )
+
+        await viewModel.repairDaemon()
+        await waitForCondition { client.lastDisableSleepValue == true }
+        await client.waitForMutationCallCount(2)
+        await client.waitForIdleMutations()
+
+        XCTAssertEqual(client.repairDaemonCallCount, 1)
+        XCTAssertEqual(client.setDisableSleepCallCount, 2)
+        XCTAssertEqual(client.lastDisableSleepValue, true)
     }
 
     @MainActor

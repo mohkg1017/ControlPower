@@ -360,6 +360,9 @@ public final class AppViewModel {
         refreshHelperStatusFromClient()
         isBusy = false
         await refreshStatus(force: true)
+        if isHelperEnabled {
+            reapplyDesiredNoSleepIfNeeded()
+        }
         if let repairErrorMessage {
             lastError = repairErrorMessage
         }
@@ -405,6 +408,9 @@ public final class AppViewModel {
                 try await self.refreshSnapshotFromClient()
                 self.refreshHelperStatusFromClient()
                 self.helperNeedsRepair = self.isHelperEnabled ? await self.client.isDaemonBroken() : false
+                if target && self.isHelperEnabled {
+                    self.reapplyDesiredNoSleepIfNeeded()
+                }
                 self.lastError = nil
             } catch {
                 self.lastError = "Helper was \(target ? "enabled" : "disabled"), but status refresh failed: \(error.controlPowerSanitizedDescription)"
@@ -664,7 +670,7 @@ public final class AppViewModel {
                 guard self.timerRequestIdentifier == requestIdentifier else { return }
                 guard timerEndDate.timeIntervalSinceNow > 0 else { break }
 
-                let appIsActive = NSApp.isActive
+                let appIsActive = NSApp?.isActive ?? false
                 let sleepInterval: Duration = appIsActive ? .seconds(5) : .seconds(15)
                 let sleepTolerance: Duration = appIsActive ? .seconds(1) : .seconds(3)
                 do {
@@ -693,14 +699,14 @@ public final class AppViewModel {
         let target = enabled
         pendingDisableSleepRequest = target
         updateDesiredNoSleep(enabled)
+        if !target {
+            cancelTimer()
+        }
         if !forceWrite, let currentValue = snapshot.disableSleep, currentValue == target {
             if pendingDisableSleepRequest == target {
                 pendingDisableSleepRequest = nil
             }
             return
-        }
-        if !target {
-            cancelTimer()
         }
         let shouldClearLowBatteryGuard = !target
         enqueueOperation("Set no-sleep mode to \(target ? "on" : "off")", key: "setDisableSleep") { viewModel in

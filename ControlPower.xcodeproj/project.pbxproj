@@ -25,7 +25,7 @@
 		4B2ED42888E360822606E00C /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E581B73090FE7376C524BC66 /* AppViewModel.swift */; };
 		51E5294CF73A2D28D0847770 /* ControlPowerCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3F9E37062B3EB7E2781BB7D /* ControlPowerCore.framework */; };
 		5324BA70CD33FC41BD263AF1 /* ServiceManagement.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9EFEC6DE9BE3E22C6BA72568 /* ServiceManagement.framework */; };
-		6387755A1C22EE60CE7C933C /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 644188FD8F3C5299A32FFC2C /* AppIntents.framework */; };
+		61337E7C205AAE3846CE5807 /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 644188FD8F3C5299A32FFC2C /* AppIntents.framework */; };
 		762B94CF67F8DBF1DCA6F575 /* PowerDaemonClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C409F0548AC1CBA6D54AFCA /* PowerDaemonClient.swift */; };
 		7647FC586286362E2DC44972 /* MutationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 199A04101523509B5F605332 /* MutationScheduler.swift */; };
 		7EA6999510CC3E4FB2EA1037 /* ControlPowerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F841A72B3332FF60B3550DA /* ControlPowerApp.swift */; };
@@ -145,6 +145,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				51E5294CF73A2D28D0847770 /* ControlPowerCore.framework in Frameworks */,
+				61337E7C205AAE3846CE5807 /* AppIntents.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -154,7 +155,6 @@
 			files = (
 				E69153DC6749C0CED930A6FD /* ControlPowerCore.framework in Frameworks */,
 				F5823FF55FAE5ED7F439D0D9 /* ServiceManagement.framework in Frameworks */,
-				6387755A1C22EE60CE7C933C /* AppIntents.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -739,6 +739,7 @@
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				EXTRACT_APP_INTENTS_METADATA = NO;
 				FUSE_BUILD_SCRIPT_PHASES = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -857,6 +858,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				EXTRACT_APP_INTENTS_METADATA = NO;
 				FUSE_BUILD_SCRIPT_PHASES = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
@@ -928,6 +930,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				EXTRACT_APP_INTENTS_METADATA = NO;
 				FUSE_BUILD_SCRIPT_PHASES = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
