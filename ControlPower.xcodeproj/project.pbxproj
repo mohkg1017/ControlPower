@@ -371,7 +371,6 @@
 				};
 			};
 			buildConfigurationList = D7C8BA77CE37DD65B707216D /* Build configuration list for PBXProject "ControlPower" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -381,6 +380,7 @@
 			mainGroup = D32F707D2D359E7B084BB86F;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
+			productRefGroup = 50DCD50500B323CBBD4EE4AF /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (

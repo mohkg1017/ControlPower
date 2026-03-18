@@ -20,7 +20,6 @@ struct MenuBarPanelView: View {
             footer
         }
         .frame(width: 300)
-        .glassEffect(in: RoundedRectangle(cornerRadius: 14))
     }
 
     private var header: some View {
