@@ -40,6 +40,10 @@ record_failure() {
   failures+=("$1")
 }
 
+escape_extended_regex() {
+  printf '%s' "$1" | sed -E 's/[][(){}.^$*+?|\\/]/\\&/g'
+}
+
 relative_path() {
   local path="$1"
   printf '%s' "${path#$scan_root/}"
@@ -77,8 +81,15 @@ if [[ "$artifact_path" == *.dmg ]]; then
   done < <(find "$scan_root" -mindepth 1 -maxdepth 1 -print0)
 fi
 
-secret_labels=(
-  "local user path"
+secret_labels=()
+secret_patterns=()
+
+if [[ -n "${HOME:-}" ]]; then
+  secret_labels+=("local home path")
+  secret_patterns+=("$(escape_extended_regex "$HOME")")
+fi
+
+secret_labels+=(
   "macOS private workspace path"
   "release env filename"
   "GitHub token"
@@ -86,11 +97,9 @@ secret_labels=(
   "developer identity variable"
   "notary profile variable"
   "local AI config path"
-  "personal email"
 )
 
-secret_patterns=(
-  '/Users/moekanan'
+secret_patterns+=(
   '/Users/[A-Za-z0-9._-]+/(Code|Desktop|Downloads|Documents|Library|\.codex|\.claude|\.ssh)'
   '\.controlpower-release\.env'
   'gh[pousr]_[A-Za-z0-9_]{20,}'
@@ -98,7 +107,6 @@ secret_patterns=(
   'DEVELOPER_ID_APP='
   'NOTARY_PROFILE='
   '(\.claude|\.codex|\.cursor|CLAUDE\.md)'
-  'mohammedkanan1997@gmail\.com'
 )
 
 while IFS= read -r -d '' file_path; do
