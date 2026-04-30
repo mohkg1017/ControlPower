@@ -4,6 +4,7 @@
 .build/
 .cursor/
 .continues-handoff.md
+CLAUDE.md
 build_log.txt
 build/
 DerivedData/
