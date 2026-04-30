@@ -4,21 +4,28 @@
 
 # ControlPower
 
-ControlPower keeps your Mac awake from the menu bar, even when a MacBook lid is closed. It controls macOS sleep behavior without making you live in Terminal.
+ControlPower keeps your Mac awake from the menu bar. It is made for MacBooks running lid-closed and desktop Macs like iMacs that should keep working while the display is fully off.
 
 [Download the latest notarized DMG](https://github.com/mohkg1017/ControlPower/releases/latest)
 
 <p align="center">
-  <img src="docs/assets/controlpower-menu-panel.png" alt="ControlPower menu bar panel showing No Sleep Active and Sleep Display controls" width="600">
+  <img src="docs/assets/controlpower-main-window.png" alt="ControlPower main window showing no sleep, sleep display, timer, and diagnostics controls" width="900">
 </p>
 
-Perfect for MacBooks: close the lid, keep the Mac running, and let the built-in display turn fully off instead of sitting dimmed.
+<p align="center">
+  <img src="docs/assets/controlpower-menu-panel.png" alt="ControlPower menu bar panel showing No Sleep Active and Sleep Display controls" width="520">
+</p>
+
+Perfect for MacBooks and iMacs: keep the Mac running, turn the display fully off instead of merely dimming it, and customize the sleep behavior for how you actually use the machine.
+
+Built for the lid-closed workflow that generic keep-awake apps can still struggle with: your Mac stays awake after the lid closes, while the display turns fully off.
 
 ## Features
 
 - Keep your Mac awake after closing the lid.
 - Turn the display fully off while the Mac stays running.
 - Toggle `disablesleep` with one click from the menu bar.
+- Customize sleep-related settings without opening Terminal.
 - Restore safe defaults for `disablesleep` and `lidwake`.
 - Uses a signed helper for system-level changes.
 

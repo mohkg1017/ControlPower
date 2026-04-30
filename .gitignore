@@ -10,6 +10,7 @@ build_log.txt
 build/
 DerivedData/
 default.profraw
+docs/assets/*-full.png
 scratch/
 **/xcuserdata/
 **/*.xcuserstate
