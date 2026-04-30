@@ -1,4 +1,6 @@
-# ControlPower
+<p align="center">
+  <img src="docs/assets/controlpower-logo.png" alt="ControlPower" width="900">
+</p>
 
 ControlPower is a native macOS menu bar utility to manage sleep-related `pmset` options with a privileged helper.
 
