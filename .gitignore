@@ -1,6 +1,13 @@
 .DS_Store
 .release/
+.audit/
+.build/
+.cursor/
+.continues-handoff.md
+build_log.txt
 build/
 DerivedData/
+default.profraw
+scratch/
 **/xcuserdata/
 **/*.xcuserstate
