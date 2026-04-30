@@ -120,7 +120,7 @@ if [[ -z "$BUILD" ]]; then
 fi
 
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
-  echo "Using NOTARY_PROFILE=$NOTARY_PROFILE"
+  echo "Using configured notary profile."
 else
   echo "ALLOW_UNNOTARIZED_RELEASE=1 set; notarization will be skipped."
 fi

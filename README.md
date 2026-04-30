@@ -24,7 +24,9 @@ xcodebuild -project ControlPower.xcodeproj -scheme ControlPower -configuration D
 DEVELOPER_ID_APP='Developer ID Application: ...' NOTARY_PROFILE='notary-profile' scripts/release.sh 1.0.0 1
 ```
 
-`scripts/release.sh` now uses `xcodebuild archive` and requires `DEVELOPER_ID_APP` for signing. It then attempts `xcodebuild -exportArchive` and copies the app dSYM from the archive into `.release/archives`.
+`scripts/release.sh` now uses `xcodebuild archive` and requires `DEVELOPER_ID_APP` for signing. It then attempts `xcodebuild -exportArchive`, copies the app dSYM from the archive into `.release/archives`, and signs the DMG before notarization.
+
+The release script also runs `scripts/check-release-privacy.sh` against the built app and DMG before notarization so local files, release credentials, and private machine paths cannot be accidentally packaged for GitHub.
 
 ## Install to Applications
 
@@ -129,6 +131,8 @@ It does not auto-upgrade binaries; it only points Xcode to whatever local `codex
 - Use the `ControlPowerProfiling` scheme or `-configuration Profiling` for Instruments captures with hardened runtime profiling entitlements.
 - Verify release entitlements before distribution:
   - `scripts/check-release-entitlements.sh /path/to/ControlPower.app`
+- Verify release privacy before distribution:
+  - `scripts/check-release-privacy.sh /path/to/ControlPower.app-or.dmg`
 - CLI profiling helpers:
   - `scripts/record_time_profiler.sh`
   - `scripts/extract_time_samples.py`

@@ -279,6 +279,7 @@ nonisolated final class ControlPowerTests: XCTestCase {
         let viewModel = AppViewModel(client: client)
         viewModel.setHelperEnabled(false)
         await client.waitForSetHelperEnabledCallCount(1)
+        await client.waitForFetchStatusCallCount(1)
 
         viewModel.setHelperEnabled(true)
         client.holdFetchStatus = false

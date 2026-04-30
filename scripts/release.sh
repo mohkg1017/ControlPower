@@ -42,6 +42,14 @@ if [[ -z "${NOTARY_PROFILE:-}" && "${ALLOW_UNNOTARIZED_RELEASE:-0}" != "1" ]]; t
   exit 1
 fi
 
+if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+  if ! xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
+    echo "error: configured NOTARY_PROFILE is not available to notarytool."
+    echo "error: run 'xcrun notarytool store-credentials <profile-name>' to recreate the keychain profile."
+    exit 1
+  fi
+fi
+
 if [[ -f "$ROOT_DIR/project.yml" ]]; then
   if command -v xcodegen >/dev/null 2>&1; then
     xcodegen generate --spec "$ROOT_DIR/project.yml"
@@ -178,7 +186,7 @@ if [[ ! -f "$HELPER_PATH" ]]; then
   exit 1
 fi
 
-echo "Signing app with: $DEVELOPER_ID_APP"
+echo "Signing app with the configured Developer ID identity."
 /usr/bin/codesign --force --options runtime --timestamp --identifier "com.moe.controlpower.helper.bin" --sign "$DEVELOPER_ID_APP" "$HELPER_PATH"
 
 if [[ -d "$ARCHIVE_APP_PATH/Contents/Frameworks" ]]; then
@@ -221,6 +229,7 @@ else
 fi
 
 bash "$ROOT_DIR/scripts/check-release-entitlements.sh" "$APP_PATH"
+bash "$ROOT_DIR/scripts/check-release-privacy.sh" "$APP_PATH"
 
 DSYM_PATH="$ARCHIVE_PATH/dSYMs/$APP_NAME.app.dSYM"
 if [[ -d "$DSYM_PATH" ]]; then
@@ -230,18 +239,23 @@ fi
 
 DMG_PATH="$ARCHIVES/$APP_NAME-$VERSION.dmg"
 DMGROOT="$BUILD_DIR/dmgroot"
+rm -rf "$DMGROOT"
 mkdir -p "$DMGROOT"
-rm -rf "$DMGROOT/$APP_NAME.app"
 cp -R "$APP_PATH" "$DMGROOT/$APP_NAME.app"
 ln -sf /Applications "$DMGROOT/Applications"
 
 hdiutil create -volname "$APP_NAME" -srcfolder "$DMGROOT" -ov -format UDZO "$DMG_PATH"
 echo "DMG created: $DMG_PATH"
+bash "$ROOT_DIR/scripts/check-release-privacy.sh" "$DMG_PATH"
+echo "Signing DMG with the configured Developer ID identity."
+/usr/bin/codesign --force --timestamp --sign "$DEVELOPER_ID_APP" "$DMG_PATH"
+/usr/bin/codesign --verify --verbose=2 "$DMG_PATH"
+bash "$ROOT_DIR/scripts/check-release-privacy.sh" "$DMG_PATH"
 
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
   NOTARY_SUBMIT_JSON="$ARCHIVES/notary-submit.json"
   NOTARY_LOG_JSON="$ARCHIVES/notary-log.json"
-  echo "Submitting DMG for notarization with profile '$NOTARY_PROFILE' (this can take several minutes)..."
+  echo "Submitting DMG for notarization with the configured profile (this can take several minutes)..."
   xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait --output-format json > "$NOTARY_SUBMIT_JSON"
 
   NOTARY_ID="$(/usr/bin/python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("id") or d.get("jobId") or d.get("submissionId") or "")' "$NOTARY_SUBMIT_JSON")"
