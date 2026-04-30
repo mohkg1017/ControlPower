@@ -2,138 +2,37 @@
   <img src="docs/assets/controlpower-logo.png" alt="ControlPower" width="900">
 </p>
 
-ControlPower is a native macOS menu bar utility to manage sleep-related `pmset` options with a privileged helper.
+# ControlPower
+
+ControlPower keeps your Mac awake from the menu bar, even when a MacBook lid is closed. It controls macOS sleep behavior without making you live in Terminal.
+
+[Download the latest notarized DMG](https://github.com/mohkg1017/ControlPower/releases/latest)
+
+<p align="center">
+  <img src="docs/assets/controlpower-menu-panel.png" alt="ControlPower menu bar panel showing No Sleep Active and Sleep Display controls" width="600">
+</p>
+
+Perfect for MacBooks: close the lid, keep the Mac running, and let the built-in display turn fully off instead of sitting dimmed.
 
 ## Features
 
-- One-click toggle for `sudo pmset -a disablesleep 1/0`
-- Status view for `lidwake` from `pmset -g`
-- One-click restore defaults (`disablesleep 0`, `lidwake 1`)
-- Current status view using `pmset -g`
+- Keep your Mac awake after closing the lid.
+- Turn the display fully off while the Mac stays running.
+- Toggle `disablesleep` with one click from the menu bar.
+- Restore safe defaults for `disablesleep` and `lidwake`.
+- Uses a signed helper for system-level changes.
 
-## Build
+## Requirements
 
-```bash
-xcodegen generate
-xcodebuild -project ControlPower.xcodeproj -scheme ControlPower -configuration Debug -destination 'platform=macOS' build
-```
+- macOS 26.0 or later
+- Apple silicon or Intel Mac
 
-## Release
+## Install
 
-```bash
-DEVELOPER_ID_APP='Developer ID Application: ...' NOTARY_PROFILE='notary-profile' scripts/release.sh 1.0.0 1
-```
+1. Download `ControlPower-1.0.0.dmg` from the latest release.
+2. Open the DMG and drag ControlPower into Applications.
+3. Launch ControlPower and approve the helper when macOS asks.
 
-`scripts/release.sh` now uses `xcodebuild archive` and requires `DEVELOPER_ID_APP` for signing. It then attempts `xcodebuild -exportArchive`, copies the app dSYM from the archive into `.release/archives`, and signs the DMG before notarization.
+## Privacy
 
-The release script also runs `scripts/check-release-privacy.sh` against the built app and DMG before notarization so local files, release credentials, and private machine paths cannot be accidentally packaged for GitHub.
-
-## Install to Applications
-
-```bash
-scripts/install_to_applications.sh
-```
-
-The installer now stages the new app and backs up any existing `/Applications/ControlPower.app` before replacing it.
-
-Install with a custom name (for distribution/testing side-by-side):
-
-```bash
-scripts/install_to_applications.sh --target /Applications/MoeRelease.app
-```
-
-Or use the shortcut wrapper:
-
-```bash
-scripts/install_moe_release.sh
-```
-
-`scripts/install_moe_release.sh` only installs/renames the built app in `/Applications`; it does not create a signed release package.
-
-## One-Click Release Builder App
-
-Install a launcher app that opens Terminal and runs the signed release pipeline (`scripts/release.sh`):
-
-```bash
-scripts/install_controlpower_release_app.sh
-```
-
-This installs `/Applications/ControlPowerRelease.app`.
-
-On first install, it creates `~/.controlpower-release.env`. Fill it with your signing values:
-
-```bash
-DEVELOPER_ID_APP='Developer ID Application: Your Name (TEAMID)'
-# Optional for notarization:
-# NOTARY_PROFILE='your-notary-profile'
-```
-
-Then launch `ControlPowerRelease.app` from Applications and follow prompts for version/build.
-
-Tip: list valid signing identities with:
-
-```bash
-security find-identity -v -p codesigning | grep "Developer ID Application"
-```
-
-`ControlPowerRelease.app` runs tests by default. To skip tests intentionally, launch it from Terminal with:
-
-```bash
-SKIP_TESTS=1 scripts/run_release_from_launcher.sh
-```
-
-Notarization is required by default. To intentionally build a non-notarized DMG, set:
-
-```bash
-ALLOW_UNNOTARIZED_RELEASE=1 scripts/run_release_from_launcher.sh
-```
-
-## Xcode Agent Self-Heal (Codex + Claude)
-
-Install event-based self-healing for Xcode Coding Assistant links/config:
-
-```bash
-scripts/install_xcode_agent_selfheal.sh
-```
-
-The installer copies the doctor script into `~/Library/Application Support/ControlPower/xcode-agent-selfheal/` so LaunchAgent execution is not blocked by Desktop/Documents privacy protections.
-
-Run a manual health check at any time:
-
-```bash
-scripts/doctor_xcode_agents_once.sh
-```
-
-Or run check-only mode (no repairs):
-
-```bash
-scripts/doctor_xcode_agents.sh --check-only --verbose
-```
-
-Remove the self-heal LaunchAgent:
-
-```bash
-scripts/install_xcode_agent_selfheal.sh --uninstall
-```
-
-The doctor script repairs:
-- `~/Library/Developer/Xcode/CodingAssistant/Agents/Versions/*/{codex,claude}` symlinks
-- `~/Library/Developer/Xcode/CodingAssistant/codex/config.toml` xcode profile block
-- `~/Library/Developer/Xcode/CodingAssistant/ClaudeAgentConfig/settings.json` model setting
-
-It does not auto-upgrade binaries; it only points Xcode to whatever local `codex` and `claude` executables are already installed.
-
-## Notes
-
-- LaunchDaemon plist is bundled at `Contents/Library/LaunchDaemons/com.moe.controlpower.helper.v2.plist`.
-- Helper binary is embedded at `Contents/MacOS/ControlPowerHelper` and exposed via Mach service `com.moe.controlpower.helper.v2.mach`.
-- Helper starts on demand via Mach service instead of being forced to run continuously.
-- Use the `ControlPowerProfiling` scheme or `-configuration Profiling` for Instruments captures with hardened runtime profiling entitlements.
-- Verify release entitlements before distribution:
-  - `scripts/check-release-entitlements.sh /path/to/ControlPower.app`
-- Verify release privacy before distribution:
-  - `scripts/check-release-privacy.sh /path/to/ControlPower.app-or.dmg`
-- CLI profiling helpers:
-  - `scripts/record_time_profiler.sh`
-  - `scripts/extract_time_samples.py`
-  - `scripts/top_hotspots.py`
+ControlPower does not collect analytics or user data. The release pipeline checks the app and DMG before upload so local files, credentials, and private machine paths are not accidentally shipped.
