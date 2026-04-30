@@ -6,7 +6,7 @@
 
 ControlPower keeps your Mac awake from the menu bar. It is made for MacBooks running lid-closed and desktop Macs like iMacs that should keep working while the display is fully off.
 
-I tried using amphetamine, but everytime i would close my macbooks lid, the mac would eventually go to sleep. so i created controlpower.
+It was built for the frustrating case where a generic keep-awake app still lets a MacBook fall asleep after the lid closes.
 
 [Download the latest notarized DMG](https://github.com/mohkg1017/ControlPower/releases/latest)
 
@@ -19,8 +19,6 @@ I tried using amphetamine, but everytime i would close my macbooks lid, the mac 
 </p>
 
 Perfect for MacBooks and iMacs: keep the Mac running, turn the display fully off instead of merely dimming it, and customize the sleep behavior for how you actually use the machine.
-
-Built for the lid-closed workflow that generic keep-awake apps can still struggle with: your Mac stays awake after the lid closes, while the display turns fully off.
 
 ## Features
 
