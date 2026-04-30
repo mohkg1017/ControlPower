@@ -6,6 +6,8 @@
 
 ControlPower keeps your Mac awake from the menu bar, even when a MacBook lid is closed. It controls macOS sleep behavior without making you live in Terminal.
 
+I tried using amphetamine, but everytime i would close my macbooks lid, the mac would eventually go to sleep. so i created controlpower.
+
 [Download the latest notarized DMG](https://github.com/mohkg1017/ControlPower/releases/latest)
 
 <p align="center">
